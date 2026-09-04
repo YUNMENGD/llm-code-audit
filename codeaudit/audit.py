@@ -64,9 +64,13 @@ def audit_path(target: str | Path, depth: str = "file") -> AuditReport:
                 engine["units"] += 1
                 issues += _audit_unit(client, u, source_lines, static_rules, knowledge)
 
-    # ③ 校验 + 去重
+    # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → 置信度闸门(T2)
+    before = len(issues)
     issues = V.dedupe(issues)
+    issues = V.cwe_merge(issues)
     issues = [i for i in issues if not (i.detector == "llm" and not i.verified)]
+    issues = V.confidence_gate(issues)
+    filtered = before - len(issues)
     consistency_runs = int(os.getenv("AUDIT_CONSISTENCY_RUNS", "1"))
 
     report = AuditReport(
@@ -77,6 +81,8 @@ def audit_path(target: str | Path, depth: str = "file") -> AuditReport:
     )
     report.stats = {
         "total": len(issues),
+        "raw_before_validation": before,
+        "filtered_out": filtered,
         "by_severity": report.count_by("severity"),
         "by_category": report.count_by("category"),
         "by_detector": report.count_by("detector"),
