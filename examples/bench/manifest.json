@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "name": "评测基准 ground truth",
+    "note": "expected=正样本缺陷(文件/行/CWE)；negatives 预期零检出。评测匹配容忍 ±2 行。",
+    "version": "0.1"
+  },
+  "expected": [
+    {"file": "pos01_query.py",  "cwe": "CWE-89",  "line": 7},
+    {"file": "pos02_backup.py", "cwe": "CWE-78",  "line": 6},
+    {"file": "pos03_loader.py", "cwe": "CWE-502", "line": 6},
+    {"file": "pos04_files.py",  "cwe": "CWE-22",  "line": 8},
+    {"file": "pos05_users.py",  "cwe": "CWE-327", "line": 6},
+    {"file": "pos06_calc.py",   "cwe": "CWE-95",  "line": 6}
+  ],
+  "negatives": [
+    "neg01_safe_query.py",
+    "neg02_cli.py",
+    "neg03_config.py",
+    "neg04_pathlib.py",
+    "neg05_hasher.py",
+    "neg06_eval_name.py",
+    "neg07_secret_like.py",
+    "neg08_threading.py"
+  ]
+}

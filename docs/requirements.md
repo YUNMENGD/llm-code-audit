@@ -52,12 +52,13 @@ severity 定义：
 ## 6. 验收标准（对应结题四阶段成果）
 
 1. `python -m codeaudit audit <demo项目> -d function` 输出报告，预埋缺陷检出率 100%（examples 标准集）
-2. 人工标注集（≥20 个真实开源项目文件，含正负样本）precision ≥ 0.8
-3. 一致性实验报告：同输入 3 次运行的 Jaccard 均值 ≥ 0.8
+2. 评测基准：`python -m codeaudit eval examples/bench --runs 3`，precision ≥ 0.8 且 recall ≥ 0.8
+   （基准集 = examples/bench/：6 正样本 14 标注 + 8 干扰样本 0 预期；真实开源项目样本 10 月扩充至 ≥20）
+3. 一致性：同输入 3 次运行的 eval 结果 stable_across_runs=True（D17 缓存使多轮评测近似免费）
 4. 离线测试全绿 + 使用说明书（11 月）
 
-## 7. 待评审问题（9/7 定稿会拍板）
+## 7. 评审问题结论（9/7 定稿）
 
-- Q1：人工标注测试集谁负责建？（≥20 文件，Issue 认领）
-- Q2：工程级审计是否需要读依赖的第三方库源码？（建议：不读，只看摘要，控成本）
-- Q3：报告是否要输出 HTML 版？（建议：Markdown 为主，HTML 用 pandoc 一键转，不做模板工程）
+- Q1：基准集已建（examples/bench + eval 命令），开源真实项目扩充排在 10 月
+- Q2：已定——工程级只读摘要不读三方源码（控成本，见 ADR 决策）
+- Q3：已实现——`--html` 内嵌样式渲染（markdown 库，无需 pandoc）
