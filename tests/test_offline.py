@@ -175,4 +175,28 @@ check("报告含定位与修复", "p.py:18" in md and "修复建议" in md)
 js = rep.to_json()
 check("JSON 可往返", '"rule_id": "CWE-89"' in js)
 
+print("\n[8] examples：few-shot 校准示例（D13）")
+from codeaudit import examples as EX                 # noqa: E402
+from codeaudit import audit as AU                     # noqa: E402
+fn_ex = EX.format_examples("function")
+check("函数级示例含多例", "## 示例1" in fn_ex and "## 示例2" in fn_ex)
+check("含 SQL 注入正例", "CWE-89" in fn_ex and "参数化" in fn_ex)
+check("含参数化查询反例", "WHERE name=%s" in fn_ex)
+file_ex = EX.format_examples("file")
+check("文件级含跨函数数据流例", "CWE-22" in file_ex and "read_req" in file_ex)
+check("limit 截断示例数", EX.format_examples("function", limit=1).count("## 示例") == 1)
+check("开关：显式 True", EX.examples_enabled(True) is True)
+check("开关：显式 False", EX.examples_enabled(False) is False)
+os.environ["PROMPT_EXAMPLES"] = "0"
+check("开关：读环境变量=0", EX.examples_enabled() is False)
+os.environ["PROMPT_EXAMPLES"] = "1"
+check("开关：读环境变量=1", EX.examples_enabled() is True)
+del os.environ["PROMPT_EXAMPLES"]
+
+tpl_fn = AU.load_prompt("function_audit.md")
+check("函数模板含 examples 占位符", "{{examples}}" in tpl_fn)
+check("函数示例不再内联硬编码", tpl_fn.count("cur.execute") == 0)
+tpl_file = AU.load_prompt("file_audit.md")
+check("文件模板含 examples 占位符", "{{examples}}" in tpl_file)
+
 print(f"\n全部通过：{PASS} 项 ✓")

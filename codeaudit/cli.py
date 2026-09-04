@@ -32,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
                            default="file", help="审计粒度")
             s.add_argument("-o", "--out", default="out/report.md")
             s.add_argument("-j", "--json", dest="json_out", default="out/report.json")
+            s.add_argument("--no-examples", dest="examples", action="store_false",
+                           default=None,
+                           help="关闭 few-shot 校准示例（A/B 对比用；也可用环境变量 PROMPT_EXAMPLES=0）")
 
     sub.add_parser("rules", help="列出规则库")
     k = sub.add_parser("kb", help="检索知识库")
@@ -82,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     from .audit import audit_path
     from .report import write_report
     print(f"审计 {a.target}（粒度 {a.depth}）...")
-    rep = audit_path(a.target, depth=a.depth)
+    rep = audit_path(a.target, depth=a.depth, use_examples=a.examples)
     md, js = write_report(rep, a.out, a.json_out)
     print(f"完成：{rep.stats['total']} 个问题 → {md}")
     if not rep.engine["llm_used"]:

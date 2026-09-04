@@ -17,6 +17,7 @@ from . import parser as P
 from . import retriever as R
 from . import rules as RL
 from . import validate as V
+from .examples import examples_enabled, format_examples
 from .llm import LLMClient, LLMError, extract_json_array
 from .models import AuditReport, CodeUnit, Issue
 
@@ -28,16 +29,22 @@ def load_prompt(name: str) -> str:
     return f.read_text(encoding="utf-8") if f.exists() else ""
 
 
-def audit_path(target: str | Path, depth: str = "file") -> AuditReport:
-    """审计一个文件或目录。depth: function(逐函数) | file(整体) | project(工程级)"""
+def audit_path(target: str | Path, depth: str = "file",
+               use_examples: bool | None = None) -> AuditReport:
+    """审计一个文件或目录。depth: function(逐函数) | file(整体) | project(工程级)
+
+    use_examples: few-shot 校准示例开关；None 时读环境变量 PROMPT_EXAMPLES。
+    """
     target = Path(target)
     started = time.time()
     client = LLMClient()
     static_rules = RL.load_rules()
     knowledge = R.load_knowledge()
+    use_examples = examples_enabled(use_examples)
     issues: list[Issue] = []
     engine = {"model": client.model if client.available() else "static-only",
-              "depth": depth, "llm_used": False, "units": 0}
+              "depth": depth, "llm_used": False, "units": 0,
+              "examples": use_examples}
 
     files = [target] if target.is_file() else sorted(
         p for p in target.rglob("*.py")
@@ -62,7 +69,8 @@ def audit_path(target: str | Path, depth: str = "file") -> AuditReport:
                 units = [file_unit]
             for u in units:
                 engine["units"] += 1
-                issues += _audit_unit(client, u, source_lines, static_rules, knowledge)
+                issues += _audit_unit(client, u, source_lines, static_rules,
+                                      knowledge, use_examples)
 
     # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → rule_id白名单 → 置信度闸门(T2)
     valid_ids = {it["id"] for it in knowledge} | {r["id"] for r in static_rules}
@@ -94,19 +102,23 @@ def audit_path(target: str | Path, depth: str = "file") -> AuditReport:
 
 
 def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
-                static_rules: list[dict], knowledge: list[dict]) -> list[Issue]:
+                static_rules: list[dict], knowledge: list[dict],
+                use_examples: bool = True) -> list[Issue]:
     """单个工作单元的 LLM 审计：检索知识 → 组 Prompt → 调用 → 解析 → 校验。"""
     hints = RL.scan_source(unit.source, static_rules, unit.path)
     query = unit.source[:3000] + " " + " ".join(unit.context.get("imports", []))
     hits = R.retrieve(query, top_k=5, items=knowledge)
 
     tpl = load_prompt(f"{unit.kind}_audit.md") or load_prompt("file_audit.md")
+    ex_kind = "file" if unit.kind == "project" else unit.kind
     prompt = (tpl
               .replace("{{language}}", "Python")
               .replace("{{scope}}", f"{unit.kind}: {unit.name}")
               .replace("{{context}}", _context_block(unit))
               .replace("{{knowledge}}", R.format_for_prompt(hits))
               .replace("{{hints}}", _hints_block(hints))
+              .replace("{{examples}}",
+                       format_examples(ex_kind) if use_examples else "")
               .replace("{{code}}", unit.tagged()))
 
     messages = [

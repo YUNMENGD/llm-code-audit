@@ -34,3 +34,7 @@ analysis / impact / fix / confidence(0~1)
 4. **修复方案安全自查**：fix 本身不得引入新漏洞。禁止的"修复"：`eval` 用空 `__builtins__` 沙箱、手工转义拼 SQL、`pickle` 换 `marshal`、MD5 加盐代替 bcrypt。拿不准就只写文字方向，不给代码。
 5. **依赖外部上下文的判定降权**：需要调用方/鉴权中间件/部署配置佐证的结论（IDOR、竞态、输入是否真可控），confidence ≤ 0.7 且 fix 写成「建议人工核查：…」。
 6. 无问题输出 []。
+
+{{examples}}
+
+现在审查上方「待审代码」，按输出要求只给 JSON 数组。
