@@ -14,6 +14,8 @@ _ICON = {Severity.CRITICAL: "🔴", Severity.HIGH: "🟠",
          Severity.MEDIUM: "🟡", Severity.LOW: "🔵"}
 _LABEL = {Severity.CRITICAL: "严重", Severity.HIGH: "高危",
           Severity.MEDIUM: "中危", Severity.LOW: "低危"}
+_DET = {"static": "静态规则", "llm": "LLM", "both": "规则+LLM",
+        "cross": "双模型共识"}
 _CAT = {"security": "安全漏洞", "logic": "逻辑错误",
         "style": "代码规范", "engineering": "工程实践"}
 
@@ -39,9 +41,14 @@ def render_markdown(r: AuditReport) -> str:
     lines += ["## 问题清单", "",
               "| # | 级别 | 类别 | 规则 | 位置 | 问题 | 检出方式 |",
               "|---|---|---|---|---|---|---|"]
+    cr = s.get("cross_review") or {}
+    if cr.get("enabled"):
+        lines += [f"- **交叉复核**：{cr.get('agreed', 0)} 共识 / "
+                  f"{cr.get('single_model', 0)} 单源待确认 / "
+                  f"一致率 {cr.get('agreement_rate')}", ""]
     for idx, i in enumerate(r.sorted_issues(), 1):
         loc = f"`{Path(i.path).name}:{i.line_start}`"
-        det = {"static": "静态规则", "llm": "LLM", "both": "规则+LLM"}[i.detector]
+        det = _DET.get(i.detector, i.detector)
         lines.append(f"| {idx} | {_ICON[i.severity]}{_LABEL[i.severity]} | {_CAT.get(i.category.value, i.category.value)} "
                      f"| {i.rule_id} | {loc} | {i.title} | {det} |")
     lines.append("")
@@ -76,8 +83,39 @@ def render_markdown(r: AuditReport) -> str:
     return "\n".join(lines)
 
 
+def render_html(r: AuditReport) -> str:
+    """把 Markdown 报告转成带样式的 HTML（D16）。markdown 库缺失时降级为 <pre>。"""
+    md = render_markdown(r)
+    try:
+        import markdown as _md
+        body = _md.markdown(md, extensions=["tables", "fenced_code"])
+    except ImportError:
+        import html as _h
+        body = "<pre>" + _h.escape(md) + "</pre>"
+    return _HTML_TMPL.replace("{{body}}", body).replace(
+        "{{title}}", f"代码审计 · {r.target}")
+
+
+_HTML_TMPL = """<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{title}}</title><style>
+body{font-family:-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;color:#1a1a2e;line-height:1.6}
+h1{border-bottom:3px solid #4361ee;padding-bottom:.3rem}
+h2{color:#3f37c9;margin-top:2rem;border-left:4px solid #4cc9f0;padding-left:.6rem}
+h3{margin-top:1.4rem}
+table{border-collapse:collapse;width:100%;font-size:.92rem;margin:1rem 0}
+th,td{border:1px solid #d0d7de;padding:.5rem .6rem;text-align:left;vertical-align:top}
+th{background:#f6f8fa}tr:nth-child(even){background:#fbfcfe}
+code{background:#f0f2f6;padding:.1rem .35rem;border-radius:4px;font-family:Consolas,Menlo,monospace}
+pre{background:#0d1117;color:#e6edf3;padding:1rem;border-radius:8px;overflow-x:auto}
+pre code{background:none;color:inherit;padding:0}
+blockquote{border-left:4px solid #ccc;margin:0;padding:.2rem 1rem;color:#666}
+</style></head><body>{{body}}</body></html>"""
+
+
 def write_report(r: AuditReport, out_md: str | Path,
-                 out_json: str | Path | None = None) -> tuple[Path, Path | None]:
+                 out_json: str | Path | None = None,
+                 out_html: str | Path | None = None) -> tuple[Path, Path | None, Path | None]:
     out_md = Path(out_md)
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(render_markdown(r), encoding="utf-8")
@@ -86,7 +124,12 @@ def write_report(r: AuditReport, out_md: str | Path,
         jp = Path(out_json)
         jp.parent.mkdir(parents=True, exist_ok=True)
         jp.write_text(r.to_json(), encoding="utf-8")
-    return out_md, jp
+    hp = None
+    if out_html:
+        hp = Path(out_html)
+        hp.parent.mkdir(parents=True, exist_ok=True)
+        hp.write_text(render_html(r), encoding="utf-8")
+    return out_md, jp, hp
 
 
 def load_report_json(path: str | Path) -> dict:

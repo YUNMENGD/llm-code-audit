@@ -92,9 +92,10 @@ class Issue:
     function_name: str | None = None
     impact: str = ""
     source: str = ""            # 知识库来源标注（CWE/OWASP 链接）
-    detector: str = "static"    # "static" | "llm" | "both"
+    detector: str = "static"    # "static" | "llm" | "both"(规则+模型) | "cross"(双模型共识)
     verified: bool = False      # 是否通过二次校验
     votes: int = 1              # 多次运行命中次数（一致性统计用）
+    models: list[str] = field(default_factory=list)   # 报告此问题的模型名（D15 交叉复核）
 
     def key(self) -> tuple:
         """去重键：同一规则落在同一行视为同一问题。"""
@@ -107,7 +108,8 @@ class Issue:
         return d
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any], *, path: str, detector: str = "llm") -> "Issue":
+    def from_dict(cls, raw: dict[str, Any], *, path: str, detector: str = "llm",
+                  model: str | None = None) -> "Issue":
         def line(name: str, default: int = 1) -> int:
             try:
                 return int(raw.get(name) or default)
@@ -130,6 +132,7 @@ class Issue:
             confidence=_conf(raw.get("confidence")),
             source=str(raw.get("source") or ""),
             detector=detector,
+            models=[model] if model else [],
         )
 
 

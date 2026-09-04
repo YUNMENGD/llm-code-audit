@@ -2,7 +2,7 @@
 
 用法：
   python -m codeaudit check <路径>                     仅静态规则（免密钥）
-  python -m codeaudit audit <路径> [-d depth] [-o out/report.md]
+  python -m codeaudit audit <路径> [-d depth] [-o out/report.md] [--html x.html]
   python -m codeaudit rules                            列出规则库
   python -m codeaudit kb <关键词> [-n 5]               检索知识库
   python -m codeaudit selfcheck                        自检环境
@@ -35,6 +35,11 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("--no-examples", dest="examples", action="store_false",
                            default=None,
                            help="关闭 few-shot 校准示例（A/B 对比用；也可用环境变量 PROMPT_EXAMPLES=0）")
+            s.add_argument("--html", dest="html_out", default=None, metavar="PATH",
+                           help="同时输出 HTML 报告（如 out/report.html）")
+            s.add_argument("--cross-review", dest="cross", action="store_true",
+                           default=None,
+                           help="启用 D15 双模型交叉复核（需配置 LLM2_API_KEY；两模型串行调用，耗时约翻倍）")
 
     sub.add_parser("rules", help="列出规则库")
     k = sub.add_parser("kb", help="检索知识库")
@@ -85,9 +90,15 @@ def main(argv: list[str] | None = None) -> int:
     from .audit import audit_path
     from .report import write_report
     print(f"审计 {a.target}（粒度 {a.depth}）...")
-    rep = audit_path(a.target, depth=a.depth, use_examples=a.examples)
-    md, js = write_report(rep, a.out, a.json_out)
-    print(f"完成：{rep.stats['total']} 个问题 → {md}")
+    rep = audit_path(a.target, depth=a.depth, use_examples=a.examples,
+                     cross_review=a.cross)
+    md, js, hp = write_report(rep, a.out, a.json_out, a.html_out)
+    extra = f"、{hp}" if hp else ""
+    print(f"完成：{rep.stats['total']} 个问题 → {md}{extra}")
+    cr = rep.stats.get("cross_review") or {}
+    if cr.get("enabled"):
+        print(f"交叉复核：共识 {cr['agreed']} / 单源待确认 {cr['single_model']}"
+              f" / 一致率 {cr['agreement_rate']}")
     if not rep.engine["llm_used"]:
         print("提示：未检测到大模型 API Key，本次仅静态规则结果。配置 .env 后可获得语义级审计。")
     return 0

@@ -30,27 +30,39 @@ def load_prompt(name: str) -> str:
 
 
 def audit_path(target: str | Path, depth: str = "file",
-               use_examples: bool | None = None) -> AuditReport:
+               use_examples: bool | None = None,
+               cross_review: bool | None = None) -> AuditReport:
     """审计一个文件或目录。depth: function(逐函数) | file(整体) | project(工程级)
 
     use_examples: few-shot 校准示例开关；None 时读环境变量 PROMPT_EXAMPLES。
+    cross_review: D15 双模型交叉复核开关；None 时读 AUDIT_CROSS_REVIEW。
     """
     target = Path(target)
     started = time.time()
     client = LLMClient()
+    reviewer = LLMClient.for_reviewer()
+    if cross_review is None:
+        cross_review = os.getenv("AUDIT_CROSS_REVIEW", "0") == "1"
+    do_cross = cross_review and reviewer.available() and reviewer.model != client.model
+    clients = [client] + ([reviewer] if do_cross else [])
     static_rules = RL.load_rules()
     knowledge = R.load_knowledge()
     use_examples = examples_enabled(use_examples)
     issues: list[Issue] = []
     engine = {"model": client.model if client.available() else "static-only",
               "depth": depth, "llm_used": False, "units": 0,
-              "examples": use_examples}
+              "examples": use_examples,
+              "cross_review": do_cross,
+              "reviewer": reviewer.model if do_cross else None}
 
     files = [target] if target.is_file() else sorted(
         p for p in target.rglob("*.py")
         if not any(part in P.IGNORE_DIRS for part in p.parts))
 
-    for f in files:
+    n_files = len(files)
+    for fi, f in enumerate(files, 1):
+        if engine["llm_used"] or n_files > 1:
+            print(f"[{fi}/{n_files}] 解析 {f} ...", flush=True)
         file_unit = P.parse_file(f)
         source_lines = file_unit.source.splitlines()
 
@@ -58,27 +70,40 @@ def audit_path(target: str | Path, depth: str = "file",
         issues += RL.scan_source(file_unit.source, static_rules, str(f))
 
         # ② LLM 审计（未配置密钥则跳过，系统仍可输出静态结果）
-        if client.available():
+        units: list[CodeUnit] = []
+        if do_cross or client.available():
             engine["llm_used"] = True
-            units: list[CodeUnit] = []
             if depth == "function":
                 units = P.split_functions(file_unit) or [file_unit]
             elif depth == "project" and target.is_dir():
                 units = [P.parse_project(target)]
             else:
                 units = [file_unit]
-            for u in units:
-                engine["units"] += 1
-                issues += _audit_unit(client, u, source_lines, static_rules,
-                                      knowledge, use_examples)
+            total_calls = len(clients) * len(units)
+            call_no = 0
+            for cu in clients:
+                if not cu.available():
+                    continue
+                for u in units:
+                    call_no += 1
+                    tag = "共识" if do_cross else "审计"
+                    print(f"  [{call_no}/{total_calls}] {tag} {u.kind} "
+                          f"{u.name} ({cu.model}) ...", flush=True)
+                    engine["units"] += 1
+                    found = _audit_unit(cu, u, source_lines, static_rules,
+                                        knowledge, use_examples)
+                    print(f"  [{call_no}/{total_calls}]   → 模型报告 "
+                          f"{len(found)} 条候选", flush=True)
+                    issues += found
 
-    # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → rule_id白名单 → 置信度闸门(T2)
+    # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → rule_id白名单 → 双模型复核(D15) → 置信度闸门(T2)
     valid_ids = {it["id"] for it in knowledge} | {r["id"] for r in static_rules}
     before = len(issues)
     issues = V.dedupe(issues)
     issues = V.cwe_merge(issues)
     issues = [i for i in issues if not (i.detector == "llm" and not i.verified)]
     issues = V.rule_id_gate(issues, valid_ids)
+    agreement = V.cross_review(issues, enabled=do_cross, n_models=len(clients))
     issues = V.confidence_gate(issues)
     filtered = before - len(issues)
     consistency_runs = int(os.getenv("AUDIT_CONSISTENCY_RUNS", "1"))
@@ -93,6 +118,7 @@ def audit_path(target: str | Path, depth: str = "file",
         "total": len(issues),
         "raw_before_validation": before,
         "filtered_out": filtered,
+        "cross_review": agreement,
         "by_severity": report.count_by("severity"),
         "by_category": report.count_by("category"),
         "by_detector": report.count_by("detector"),
@@ -135,7 +161,8 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
     for item in extract_json_array(raw):
         if not isinstance(item, dict):
             continue
-        issue = Issue.from_dict(item, path=unit.path, detector="llm")
+        issue = Issue.from_dict(item, path=unit.path, detector="llm",
+                                 model=client.model)
         ok, reason = V.check_with_rules(issue, source_lines)
         issue.verified = ok
         if not ok:
