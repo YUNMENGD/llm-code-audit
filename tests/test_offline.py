@@ -96,6 +96,38 @@ check("静态+模型合并为 both", len(both) == 1 and both[0].detector == "bot
 cs = VD.consistency_compare([[good, bad_line], [good], [good, bad_line]])
 check("一致性指标可计算", cs["runs"] == 3 and "CWE-89" in cs["stable_rules"])
 
+print("[5b] T2/T3 新闸门")
+lo = Issue(rule_id="CWE-999", category=Category.LOGIC, severity=Severity.LOW, title="t",
+           path="p", line_start=2, evidence="", analysis="a", fix="f",
+           confidence=0.3, detector="llm")
+mid = Issue(rule_id="CWE-998", category=Category.SECURITY, severity=Severity.HIGH, title="t",
+            path="p", line_start=3, evidence="", analysis="a", fix="f",
+            confidence=0.6, detector="llm")
+static = hits[1]                      # hits[0] 已被上面的合并用例原地改写为 both
+gated = VD.confidence_gate([good, lo, mid, static])
+check("低置信LLM结果被丢弃", lo not in gated)
+check("中置信结果保留并标注", any(i.rule_id == "CWE-998" and i.analysis.startswith(VD.REVIEW_MARK) for i in gated))
+check("静态结果不受闸门影响", any(i.detector == "static" for i in gated))
+s1 = Issue(rule_id="R-SEC-002", category=Category.SECURITY, severity=Severity.CRITICAL,
+           title="os.system 执行外部命令", path="p2.py", line_start=26,
+           evidence="os.system(x)", analysis="简", fix="f",
+           confidence=0.95, detector="static", verified=True)
+llm_same_cwe = Issue(rule_id="CWE-78", category=Category.SECURITY, severity=Severity.CRITICAL,
+                     title="命令注入", path="p2.py", line_start=26,
+                     evidence="os.system(x)", analysis="详细的数据流论证" * 10,
+                     fix="subprocess 列表参数", confidence=0.95, detector="llm", verified=True)
+merged3 = VD.cwe_merge([s1, llm_same_cwe])
+check("同CWE跨来源合并为1条", len(merged3) == 1 and merged3[0].detector == "both")
+check("合并保留富文本分析", "数据流论证" in merged3[0].analysis)
+far = Issue(rule_id="CWE-89", category=Category.SECURITY, severity=Severity.CRITICAL,
+            title="另一处SQL注入", path="p", line_start=900, line_end=902,
+            evidence="", analysis="a", fix="f", detector="llm")
+check("行号不重叠不合并", len(VD.cwe_merge([llm_same_cwe, far])) == 2)
+noisy = Issue.from_dict({"rule_id": "X", "category": "logic", "severity": "low", "title": "t",
+                         "line_start": 1, "evidence": "a\\nb", "analysis": "c",
+                         "fix": "def f():\\n    return 1", "confidence": 0.9}, path="p")
+check("字面转义符被还原(T4)", "\n" in noisy.fix and "\\n" not in noisy.fix)
+
 print("[6] llm 输出解析容错")
 check("裸 JSON", len(extract_json_array('[{"a":1}]')) == 1)
 check("围栏 JSON", len(extract_json_array('```json\n[{"a":1},{"b":2}]\n```')) == 2)

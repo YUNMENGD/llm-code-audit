@@ -3,7 +3,7 @@
     "name": "代码缺陷知识库（种子批次：安全漏洞类）",
     "version": "0.1",
     "note": "每条含触发词 triggers、代码模式 pattern、修复 fix、来源 source。D9-D10 持续扩充，新增必须带来源。",
-    "maintainer": "童钰涵"
+    "maintainer": "team"
   },
   "items": [
     {

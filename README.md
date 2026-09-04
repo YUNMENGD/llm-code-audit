@@ -17,13 +17,13 @@
                     validate（规则校验/去重/一致性） ──▶ report（Markdown/HTML 报告）
 ```
 
-| 模块 | 路径 | 职责 | 负责 |
+| 模块 | 路径 | 职责 | 分工 |
 |---|---|---|---|
-| 代码处理 | `codeaudit/parser.py` | AST 解析、函数/文件级切分、行号映射 | 陈文飞 |
-| 知识库 | `knowledge/` + `codeaudit/retriever.py` | 缺陷知识库、规则库、检索 | 童钰涵 |
-| 模型分析 | `codeaudit/audit.py` + `llm.py` + `prompts/` | 工作流编排、Prompt、LLM 调用 | 王富春 |
-| 结果验证 | `codeaudit/validate.py` | 规则二次校验、去重、一致性 | 杨梦颢 |
-| 报告生成 | `codeaudit/report.py` | 结构化审计报告 | 翁思琪 |
+| 代码处理 | `codeaudit/parser.py` | AST 解析、函数/文件级切分、行号映射 | 成员认领 |
+| 知识库 | `knowledge/` + `codeaudit/retriever.py` | 缺陷知识库、规则库、检索 | 成员认领 |
+| 模型分析 | `codeaudit/audit.py` + `llm.py` + `prompts/` | 工作流编排、Prompt、LLM 调用 | 成员认领 |
+| 结果验证 | `codeaudit/validate.py` | 规则二次校验、去重、一致性 | 负责人 |
+| 报告生成 | `codeaudit/report.py` | 结构化审计报告 | 成员认领 |
 
 ## 快速开始
 

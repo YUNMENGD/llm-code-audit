@@ -13,7 +13,7 @@
 | `Severity` / `Category` | 枚举 | critical/high/medium/low ｜ security/logic/style/engineering |
 | `ISSUE_JSON_SCHEMA` | LLM 输出约束 | 写进 Prompt 的 JSON schema |
 
-## 1. parser（陈文飞）✅
+## 1. parser ✅
 
 ```python
 parse_project(root: str|Path) -> CodeUnit        # 目录树+文件摘要，kind="project"
@@ -25,7 +25,7 @@ IGNORE_DIRS: set[str]                             # 遍历排除目录
 约定：行号一律 **1-based 含端点**；装饰器归入函数单元；SyntaxError 文件降级为整体单元不抛异常。
 🔧 D14 扩展：`parse_file_java()` 等经 tree-sitter，返回同一 CodeUnit，调用方无感知。
 
-## 2. rules（童钰涵）✅
+## 2. rules ✅
 
 ```python
 load_rules() -> list[dict]                       # 聚合 knowledge/rules/*.json
@@ -40,7 +40,7 @@ verify(issue: Issue, source_lines) -> tuple[bool, str] # 行号存在? 证据可
 ```
 📐 D15 新增 `knowledge/rules/cwe_map.json`：`{"R-SEC-001":"CWE-89", ...}` 供 T3 合并用。
 
-## 3. retriever（童钰涵）✅关键词版
+## 3. retriever ✅关键词版
 
 ```python
 load_knowledge() -> list[dict]
@@ -54,7 +54,7 @@ format_for_prompt(results) -> str                          # 渲染成知识区�
 ```
 📐 D12 换向量版：**签名不变**，新增向量索引缓存目录 `data/vec/`（已 gitignore），降级时自动回退关键词打分。
 
-## 4. llm（王富春）✅
+## 4. llm ✅
 
 ```python
 class LLMClient:
@@ -87,7 +87,7 @@ confidence_gate(issues, drop=0.5, review=0.7) -> list[Issue]   # 过滤+标注
 cwe_merge(issues, cwe_map) -> list[Issue]                       # 跨来源同CWE同行段合并
 ```
 
-## 7. report（翁思琪）✅
+## 7. report ✅
 
 ```python
 render_markdown(r: AuditReport) -> str
@@ -109,8 +109,8 @@ python -m codeaudit rules | kb <词> [-n N] | selfcheck
 
 | 路径 | 写权限归属 | 说明 |
 |---|---|---|
-| knowledge/** | 童钰涵（PR 评审制，人人可提） | 新增条目必须带 source |
-| prompts/** | 王富春 | 模板里 `{{var}}` 由 audit 渲染，变量名冻结：language/scope/context/knowledge/hints/code |
+| knowledge/** | PR 评审制，全员可提，负责人合并 | 新增条目必须带 source |
+| prompts/** | 负责人合并；模板 `{{var}}` 由 audit 渲染，变量名冻结：language/scope/context/knowledge/hints/code |
 | out/** , data/** | 运行时产物 | 永不入库 |
 | docs/** | 全员 | 设计变更同步修订本文档 |
 

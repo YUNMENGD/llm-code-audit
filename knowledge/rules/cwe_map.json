@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "name": "规则ID ↔ 知识条目ID 映射表",
+    "note": "用于 validate.cwe_merge：静态规则与LLM报告同一CWE、行号重叠时合并为 both。维护：团队",
+    "version": "0.1"
+  },
+  "map": {
+    "R-SEC-001": "CWE-89",
+    "R-SEC-002": "CWE-78",
+    "R-SEC-003": "CWE-95",
+    "R-SEC-004": "CWE-502",
+    "R-SEC-005": "CWE-295",
+    "R-SEC-006": "CWE-798",
+    "R-SEC-007": "CWE-327",
+    "R-SEC-008": "CWE-78",
+    "R-SEC-009": "CWE-330",
+    "R-SEC-010": "CWE-489",
+    "R-LOG-001": "CWE-390",
+    "R-LOG-002": "CWE-1112",
+    "R-LOG-003": "CWE-480",
+    "R-ENG-001": "CWE-404",
+    "R-ENG-002": "ENG-DOC"
+  }
+}

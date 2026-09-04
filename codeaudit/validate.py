@@ -7,12 +7,85 @@
 """
 from __future__ import annotations
 
-from .models import Issue
+import json
+from pathlib import Path
+
+from .models import Issue, Severity
 from .rules import verify
+
+_MAP_FILE = (Path(__file__).resolve().parent.parent
+             / "knowledge" / "rules" / "cwe_map.json")
+
+REVIEW_MARK = "⚠️待人工确认："
 
 
 def check_with_rules(issue: Issue, source_lines: list[str]) -> tuple[bool, str]:
     return verify(issue, source_lines)
+
+
+def confidence_gate(issues: list[Issue], drop: float = 0.5,
+                    review: float = 0.7) -> list[Issue]:
+    """T2 闸门：LLM 单源且置信度过低的丢弃；0.5~0.7 的标注待人工确认。
+
+    静态命中（detector=static/both）不受此闸门影响（置信度由规则本身保证）。
+    """
+    kept: list[Issue] = []
+    for it in issues:
+        if it.detector == "llm" and it.confidence < drop:
+            continue                      # 丢弃，stats 里计入 dropped
+        if it.detector == "llm" and it.confidence < review:
+            if not it.analysis.startswith(REVIEW_MARK):
+                it.analysis = REVIEW_MARK + it.analysis
+        kept.append(it)
+    return kept
+
+
+def cwe_merge(issues: list[Issue]) -> list[Issue]:
+    """T3 合并：静态规则与 LLM 命中同一 CWE、行号区间重叠时并为一条。
+
+    保留 LLM 的富文本（analysis/fix），继承静态的 verified 与更高置信度，
+    detector 标 both，votes 累加。需要 knowledge/rules/cwe_map.json。
+    """
+    amap = _load_map()
+    out: list[Issue] = []
+    for it in issues:
+        target = None
+        key = amap.get(it.rule_id, it.rule_id)
+        for exist in out:
+            ek = amap.get(exist.rule_id, exist.rule_id)
+            if ek != key or exist.path != it.path or exist.detector == it.detector:
+                continue
+            if _overlap(exist, it):
+                target = exist
+                break
+        if target is None:
+            out.append(it)
+            continue
+        rich, poor = (it, target) if len(it.analysis) >= len(target.analysis) else (target, it)
+        rich.detector = "both"
+        rich.verified = it.verified or target.verified
+        rich.votes = it.votes + target.votes
+        rich.confidence = min(1.0, max(it.confidence, target.confidence))
+        rich.source = rich.source or poor.source
+        rich.line_start = min(rich.line_start, poor.line_start)
+        rich.line_end = max(rich.line_end or rich.line_start, poor.line_end or poor.line_start)
+        out.remove(poor)
+        out.append(rich)
+    return out
+
+
+def _load_map() -> dict[str, str]:
+    try:
+        return json.loads(_MAP_FILE.read_text(encoding="utf-8")).get("map", {})
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _overlap(a: Issue, b: Issue) -> bool:
+    ae = a.line_end or a.line_start
+    be = b.line_end or b.line_start
+    return a.line_start <= be and b.line_start <= ae
+
 
 
 def dedupe(issues: list[Issue]) -> list[Issue]:

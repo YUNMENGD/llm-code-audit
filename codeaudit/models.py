@@ -123,14 +123,27 @@ class Issue:
             line_start=line("line_start"),
             line_end=line("line_end", 0) or None,
             function_name=raw.get("function_name"),
-            evidence=str(raw.get("evidence") or "").strip(),
-            analysis=str(raw.get("analysis") or "").strip(),
-            impact=str(raw.get("impact") or "").strip(),
-            fix=str(raw.get("fix") or "").strip(),
+            evidence=_tidy(raw.get("evidence")),
+            analysis=_tidy(raw.get("analysis")),
+            impact=_tidy(raw.get("impact")),
+            fix=_tidy(raw.get("fix")),
             confidence=_conf(raw.get("confidence")),
             source=str(raw.get("source") or ""),
             detector=detector,
         )
+
+
+def _tidy(value: Any) -> str:
+    """清洗模型输出文本（T4）：还原字面 \\n/\\t，去首尾空白。"""
+    if value is None:
+        return ""
+    text = str(value)
+    if "\\n" in text and "\n" not in text:
+        text = text.replace("\\n", "\n")
+    if "\\t" in text and "\t" not in text:
+        text = text.replace("\\t", "\t")
+    return text.strip()
+
 
 
 @dataclass
