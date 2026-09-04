@@ -11,10 +11,14 @@ import hashlib
 import json
 import os
 import re
+import threading
 from pathlib import Path
 
 KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge" / "defects"
 DATA_VEC = Path(__file__).resolve().parent.parent / "data" / "vec"
+
+# 并发审计时，知识库向量矩阵只允许一个线程构建，其余等待复用
+_KB_LOCK = threading.Lock()
 
 _STOP = {"the", "and", "for", "with", "that", "this", "def", "return", "class",
          "import", "from", "self", "none", "true", "false", "if", "else", "try"}
@@ -86,28 +90,32 @@ def _load_kb_matrix(items):
     h = _kb_hash(items)
     if _KB["hash"] == h and _KB.get("mat") is not None:
         return _KB["ids"], _KB["mat"], np
-    cache = DATA_VEC / f"kb_{h[:16]}.npz"
-    if cache.exists():
-        try:
-            arr = np.load(cache)
-            _KB.update(hash=h, ids=[str(x) for x in arr["ids"]], mat=arr["mat"])
+    with _KB_LOCK:
+        # 双检：等锁期间可能已被其他线程构建
+        if _KB["hash"] == h and _KB.get("mat") is not None:
             return _KB["ids"], _KB["mat"], np
+        cache = DATA_VEC / f"kb_{h[:16]}.npz"
+        if cache.exists():
+            try:
+                arr = np.load(cache)
+                _KB.update(hash=h, ids=[str(x) for x in arr["ids"]], mat=arr["mat"])
+                return _KB["ids"], _KB["mat"], np
+            except Exception:
+                pass
+        try:
+            vecs = client.embed([_embed_text(it) for it in items])
         except Exception:
+            return None
+        mat = np.asarray(vecs, dtype="float32")
+        mat /= (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-9)
+        ids = [it["id"] for it in items]
+        try:
+            DATA_VEC.mkdir(parents=True, exist_ok=True)
+            np.savez(cache, ids=np.array(ids, dtype="U64"), mat=mat)
+        except OSError:
             pass
-    try:
-        vecs = client.embed([_embed_text(it) for it in items])
-    except Exception:
-        return None
-    mat = np.asarray(vecs, dtype="float32")
-    mat /= (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-9)
-    ids = [it["id"] for it in items]
-    try:
-        DATA_VEC.mkdir(parents=True, exist_ok=True)
-        np.savez(cache, ids=np.array(ids, dtype="U64"), mat=mat)
-    except OSError:
-        pass
-    _KB.update(hash=h, ids=ids, mat=mat)
-    return ids, mat, np
+        _KB.update(hash=h, ids=ids, mat=mat)
+        return ids, mat, np
 
 
 def _vector_scores(query: str, items) -> dict[str, float]:

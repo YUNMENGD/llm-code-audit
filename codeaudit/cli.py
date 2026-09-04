@@ -39,7 +39,10 @@ def main(argv: list[str] | None = None) -> int:
                            help="同时输出 HTML 报告（如 out/report.html）")
             s.add_argument("--cross-review", dest="cross", action="store_true",
                            default=None,
-                           help="启用 D15 双模型交叉复核（需配置 LLM2_API_KEY；两模型串行调用，耗时约翻倍）")
+                           help="启用 D15 双模型交叉复核（需配置 LLM2_API_KEY；两模型并发调用）")
+            s.add_argument("--no-cache", dest="cache", action="store_false",
+                           default=None,
+                           help="关闭 D17 增量缓存（默认开启：同一代码重审不再调模型）")
 
     sub.add_parser("rules", help="列出规则库")
     k = sub.add_parser("kb", help="检索知识库")
@@ -91,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     from .report import write_report
     print(f"审计 {a.target}（粒度 {a.depth}）...")
     rep = audit_path(a.target, depth=a.depth, use_examples=a.examples,
-                     cross_review=a.cross)
+                     cross_review=a.cross, use_cache=a.cache)
     md, js, hp = write_report(rep, a.out, a.json_out, a.html_out)
     extra = f"、{hp}" if hp else ""
     print(f"完成：{rep.stats['total']} 个问题 → {md}{extra}")
@@ -99,6 +102,10 @@ def main(argv: list[str] | None = None) -> int:
     if cr.get("enabled"):
         print(f"交叉复核：共识 {cr['agreed']} / 单源待确认 {cr['single_model']}"
               f" / 一致率 {cr['agreement_rate']}")
+    cs = rep.stats.get("cache")
+    if cs:
+        print(f"缓存：命中 {cs['hit']} / 未命中 {cs['miss']}"
+              f"（未命中=本次实际计费调用数）")
     if not rep.engine["llm_used"]:
         print("提示：未检测到大模型 API Key，本次仅静态规则结果。配置 .env 后可获得语义级审计。")
     return 0

@@ -271,4 +271,68 @@ check("HTML 表格已渲染", "<table>" in html and "CWE-89" in html)
 check("HTML 内嵌样式", "<style>" in html and "border-collapse" in html)
 check("cross 检出方式有映射", RP._DET.get("cross") == "双模型共识")
 
+print("\n[11] cache：增量缓存与并发（D17）")
+import shutil                       # noqa: E402
+import tempfile                     # noqa: E402
+from codeaudit import cache as CH    # noqa: E402
+
+_tmpdir = Path(tempfile.mkdtemp())
+_old_file = CH.CACHE_FILE
+CH.CACHE_FILE = _tmpdir / "cache.json"
+CH._MEM = None
+k1 = CH.cache_key("prompt-a", "model-x")
+check("缓存键稳定且区分模型", CH.cache_key("prompt-a", "model-x") == k1
+      and CH.cache_key("prompt-a", "model-y") != k1)
+check("初始未命中", CH.get(k1) is None)
+CH.put(k1, "RAW-OUTPUT", model="model-x")
+check("put 后命中", CH.get(k1) == "RAW-OUTPUT")
+CH.flush()
+CH._MEM = None
+check("落盘重启仍命中", CH.get(k1) == "RAW-OUTPUT")
+check("开关默认开", CH.enabled() is True)
+os.environ["AUDIT_CACHE"] = "0"
+check("环境变量可关", CH.enabled() is False)
+del os.environ["AUDIT_CACHE"]
+check("显式参数优先于环境", CH.enabled(True) is True)
+
+check("并发度不超任务数", AU._concurrency(1) == 1)
+check("并发度上限10", AU._concurrency(100) <= 10)
+
+
+class _FakeLLM:
+    model = "fake-model"
+
+    def __init__(self):
+        self.calls = 0
+
+    def available(self):
+        return True
+
+    def chat(self, messages, temperature=None):
+        self.calls += 1
+        return ('[{"rule_id":"CWE-89","category":"security","severity":"high",'
+                '"title":"SQL注入","line_start":19,"line_end":19,'
+                '"function_name":"get_user",'
+                '"evidence":"cur.execute(f\\"SELECT * FROM users WHERE id = {user_id}\\")",'
+                '"analysis":"a","impact":"i","fix":"参数化","confidence":0.9}]')
+
+
+get_user_unit = next(f for f in funcs if f.name == "get_user")
+fake = _FakeLLM()
+res1, hit1 = AU._audit_unit(fake, get_user_unit, fu.source.splitlines(),
+                            rs, RT.load_knowledge(), False, True)
+check("首次未命中缓存并调模型", hit1 is False and fake.calls == 1)
+check("返回契约 (issues, hit)", len(res1) == 1 and res1[0].rule_id == "CWE-89")
+res2, hit2 = AU._audit_unit(fake, get_user_unit, fu.source.splitlines(),
+                            rs, RT.load_knowledge(), False, True)
+check("二次命中缓存不再调用", hit2 is True and fake.calls == 1)
+check("缓存重放结果一致", len(res2) == 1 and res2[0].title == res1[0].title)
+res3, hit3 = AU._audit_unit(fake, get_user_unit, fu.source.splitlines(),
+                            rs, RT.load_knowledge(), False, False)
+check("关缓存则永远调模型", hit3 is None and fake.calls == 2)
+
+CH.CACHE_FILE = _old_file
+CH._MEM = None
+shutil.rmtree(_tmpdir, ignore_errors=True)
+
 print(f"\n全部通过：{PASS} 项 ✓")
