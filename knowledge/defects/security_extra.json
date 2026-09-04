@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "name": "代码缺陷知识库（补充批次：安全漏洞扩展）",
+    "version": "0.1",
+    "note": "对齐 CWE Top 25 / OWASP，补足 security 类目至 25 条。每条含触发词，须能在真实代码字面出现。",
+    "maintainer": "team"
+  },
+  "items": [
+    {
+      "id": "CWE-95",
+      "title": "动态执行不可信代码（eval/exec）",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["eval", "exec", "dynamic", "rce"],
+      "triggers": ["eval(", "exec(", "compile(", "exec(compile"],
+      "pattern": "用户可控字符串进入 eval/exec/compile 被当作 Python 代码执行。",
+      "impact": "任意代码执行，进程与主机完全沦陷。",
+      "fix": "彻底移除 eval/exec：字面量用 ast.literal_eval；数学表达式用带白名单 AST 的专用解析器（如 simpleeval 关闭属性访问）；严禁用 __builtins__={} 伪沙箱。",
+      "source": "https://cwe.mitre.org/data/definitions/95.html"
+    },
+    {
+      "id": "CWE-94",
+      "title": "代码注入 / 服务端模板注入 SSTI",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["ssti", "template", "render", "exec"],
+      "triggers": ["render_template_string", "Template(", "from_string", "jinja2", "Environment"],
+      "pattern": "用户输入被当作模板/代码字符串渲染，Jinja2 等模板引擎可经对象图逃逸执行任意 Python。",
+      "impact": "远程代码执行，接管服务进程。",
+      "fix": "永远不要把用户输入作为模板字符串渲染；固定模板名，用户数据只作变量传入；确需动态模板用沙箱（RestrictedPython）。",
+      "source": "https://cwe.mitre.org/data/definitions/94.html"
+    },
+    {
+      "id": "CWE-611",
+      "title": "XML 外部实体注入 XXE",
+      "category": "security",
+      "severity": "high",
+      "tags": ["xml", "xxe", "parse", "entity"],
+      "triggers": ["xml.etree", "ElementTree", "lxml", "minidom", "xml.dom", "parse(", "fromstring"],
+      "pattern": "默认配置的 XML 解析器允许外部实体/DTD，攻击者用 ENTITY 读取本地文件或发起 SSRF。",
+      "impact": "读取服务器文件、端口探测、拒绝服务。",
+      "fix": "禁用外部实体：lxml 用 resolve_entities=False、no_network=True；改用 defusedxml.ElementTree 解析不可信 XML。",
+      "source": "https://cwe.mitre.org/data/definitions/611.html"
+    },
+    {
+      "id": "CWE-917",
+      "title": "表达式语言注入",
+      "category": "security",
+      "severity": "high",
+      "tags": ["expression", "spel", "ogrl", "el", "inject"],
+      "triggers": ["eval", "safe_eval", "SimpleEval", "expression", "compile(", "PyExpression"],
+      "pattern": "把用户输入直接送入表达式求值器（eval/自研表达式引擎/规则引擎），未限制可调用对象。",
+      "impact": "构造表达式读取属性或调用危险函数，导致数据泄露或 RCE。",
+      "fix": "用白名单 AST 求值（只允许字面量与受限运算），禁用属性访问与下标；避免把外部输入喂给任何 eval 类接口。",
+      "source": "https://cwe.mitre.org/data/definitions/917.html"
+    },
+    {
+      "id": "CWE-367",
+      "title": "检查时间与使用时序 TOCTOU",
+      "category": "security",
+      "severity": "high",
+      "tags": ["toctou", "race", "check", "file", "permission"],
+      "triggers": ["os.path.exists", "os.access", "os.path.isfile", "then open", "stat("],
+      "pattern": "先用 exists/access 校验文件状态，再单独打开/操作；两步之间文件可被替换为符号链接或其他内容。",
+      "impact": "权限绕过，读写本不该访问的文件。",
+      "fix": "合并为原子操作：直接 open 并捕获异常；创建文件用 os.open(O_CREAT|O_EXCL)；打开后 fstat 校验真实身份。",
+      "source": "https://cwe.mitre.org/data/definitions/367.html"
+    },
+    {
+      "id": "CWE-319",
+      "title": "敏感数据明文传输",
+      "category": "security",
+      "severity": "high",
+      "tags": ["cleartext", "http", "tls", "transmit"],
+      "triggers": ["http://", "requests.post(\"http", "urllib", "ftp.", "telnet"],
+      "pattern": "口令、令牌、个人信息经 http:// 或明文协议传输，未强制 TLS。",
+      "impact": "链路嗅探即可窃取凭据与隐私数据。",
+      "fix": "全部对外请求使用 https://；服务端启用 HSTS；禁用 FTP/Telnet 改 SFTP/SSH。",
+      "source": "https://cwe.mitre.org/data/definitions/319.html ; OWASP A02:2021"
+    },
+    {
+      "id": "CWE-306",
+      "title": "关键功能缺失身份认证",
+      "category": "security",
+      "severity": "high",
+      "tags": ["auth", "unauthenticated", "endpoint", "admin"],
+      "triggers": ["@app.route", "/admin", "/api/", "no_auth", "@login_required", "@require_auth", "public ="],
+      "pattern": "管理端点、数据写接口等敏感功能未加认证装饰器或鉴权中间件，任何人可直接调用。",
+      "impact": "未授权访问与操作，数据被任意增删改。",
+      "fix": "为所有非公开路由统一挂认证（@login_required/全局中间件默认拒绝、白名单放行公开路径）。",
+      "source": "https://cwe.mitre.org/data/definitions/306.html"
+    },
+    {
+      "id": "CWE-384",
+      "title": "会话固定 Session Fixation",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["session", "cookie", "login", "fixation"],
+      "triggers": ["session[", "session_id", "login", "make_response", "Set-Cookie"],
+      "pattern": "用户认证通过后未重新生成会话 ID，攻击者可预先植入会话标识并在登录后冒用。",
+      "impact": "账户劫持。",
+      "fix": "登录成功即旋转会话 ID（ Flask: session.clear() 后重建；rotate 底层 sid），并设 Secure/HttpOnly/SameSite。",
+      "source": "https://cwe.mitre.org/data/definitions/384.html"
+    },
+    {
+      "id": "CWE-1333",
+      "title": "正则灾难性回溯 ReDoS",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["regex", "redos", "backtrack", "pattern"],
+      "triggers": ["re.match", "re.search", "re.fullmatch", "re.compile", "(a+)+", "(|]*)*"],
+      "pattern": "含嵌套量词或或然重叠的正则匹配不可信输入，最坏情况指数级回溯。",
+      "impact": "单个恶意字符串耗尽 CPU，服务拒绝。",
+      "fix": "消除嵌套量词与重叠分支；对输入设长度上限；高危场景用 RE2/线性时间引擎，或加超时。",
+      "source": "https://cwe.mitre.org/data/definitions/1333.html"
+    },
+    {
+      "id": "CWE-639",
+      "title": "对象级授权绕过 IDOR",
+      "category": "security",
+      "severity": "high",
+      "tags": ["idor", "bypass", "object", "reference", "ownership"],
+      "triggers": ["user_id", "order_id", "doc_id", "request.args", "request.path", "filter_by", "session.get("],
+      "pattern": "直接用外部传入的资源 ID 查询/修改对象，未校验该对象归属当前用户。",
+      "impact": "改一个 ID 越权访问他人全部数据。",
+      "fix": "查询加所有权约束（WHERE id=? AND owner_id=?）；或在取回对象后校验 owner==current_user 再操作；优先用不可枚举 UUID。",
+      "source": "https://cwe.mitre.org/data/definitions/639.html ; OWASP A01:2021"
+    },
+    {
+      "id": "CWE-532",
+      "title": "敏感信息写入日志",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["log", "secret", "password", "pii", "token"],
+      "triggers": ["logging.info", "logger.debug", "print(", "f\"", "password", "token"],
+      "pattern": "把口令、令牌、身份证等敏感字段直接打进日志或异常信息。",
+      "impact": "日志系统权限通常宽松，造成凭据与隐私二次泄露。",
+      "fix": "记录前对敏感字段脱敏（掩码/哈希）；用 Filter 统一过滤已知密钥字段；错误响应只回 trace id。",
+      "source": "https://cwe.mitre.org/data/definitions/532.html"
+    }
+  ]
+}

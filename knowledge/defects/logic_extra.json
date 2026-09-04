@@ -1,0 +1,94 @@
+{
+  "meta": {
+    "name": "代码缺陷知识库（补充批次：逻辑错误扩展）",
+    "version": "0.1",
+    "note": "补足 logic 类目至 15 条，聚焦隐性逻辑与工程语义缺陷。",
+    "maintainer": "team"
+  },
+  "items": [
+    {
+      "id": "LOG-009",
+      "title": "返回值/错误码被忽略",
+      "category": "logic",
+      "severity": "high",
+      "tags": ["return", "ignore", "error", "check"],
+      "triggers": ["os.system", "subprocess", "Popen(", ".write(", "recv(", "check_output", "returncode"],
+      "pattern": "调用返回 (结果, 错误) 或可能返回哨兵值的函数，结果未检查错误分支就继续；或多返回值被丢弃其一。",
+      "impact": "失败被当作成功继续，产生脏数据或后续崩溃。",
+      "fix": "显式检查错误/None/负码分支；不需要的返回值用 _ 命名表明刻意忽略。",
+      "source": "CWE-252 / Google Python Style"
+    },
+    {
+      "id": "LOG-010",
+      "title": "时区与夏令时处理错误",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["datetime", "timezone", "utc", "timestamp"],
+      "triggers": ["datetime.now()", "localtime", "strftime", "mktime", "timedelta", "tzinfo"],
+      "pattern": "用本地 naive 时间做比较/存储/计费；datetime.now() 不带 tz 跨时区产生歧义；夏令时切换使时长计算跳变。",
+      "impact": "调度错乱、重复计费、数据时间轴断裂。",
+      "fix": "内部统一存 UTC（带 tzinfo）；展示层再转本地；时长用 aware datetime 相减，避免 naive 比较。",
+      "source": "CWE-1173"
+    },
+    {
+      "id": "LOG-011",
+      "title": "分支/状态覆盖不全",
+      "category": "logic",
+      "severity": "high",
+      "tags": ["condition", "enum", "default", "state", "match"],
+      "triggers": ["elif", "match ", "case ", "default", "status ==", "type ==", "else: pass", "else:\n"],
+      "pattern": "对枚举/字符串状态做了部分 if-elif 但缺 else/默认分支，新增取值时静默走空逻辑；或布尔组合遗漏真值表。",
+      "impact": "未覆盖状态被当作合法处理，逻辑悄然失效。",
+      "fix": "穷举分支并加 else raise（未知即报错）；对枚举用完整 match；关键判定补单元测试覆盖每个取值。",
+      "source": "CWE-1024 / 完备性原则"
+    },
+    {
+      "id": "LOG-012",
+      "title": "可空值未判空即使用",
+      "category": "logic",
+      "severity": "high",
+      "tags": ["none", "optional", "null", "attribute"],
+      "triggers": [".get(", "Optional[", ".find(", ".pop(", "next(", "re.search(", "dict.get"],
+      "pattern": "函数可能返回 None（dict.get、find、显式 None），调用方直接取属性/下标/迭代触发 TypeError。",
+      "impact": "特定输入下崩溃；错误信息不指向真正空点。",
+      "fix": "使用前先判空或用 walrus；给默认值；让类型标注 Optional 强制调用方处理 None 分支。",
+      "source": "CWE-476"
+    },
+    {
+      "id": "LOG-013",
+      "title": "除零与数值边界",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["divide", "zero", "modulo", "overflow"],
+      "triggers": ["// ", "/ len(", "% len(", "/ count", "/ total", "normalize", "zero_division"],
+      "pattern": "分母可能为 0（计数、平均值、步长）未防护；整数除法与浮点除法混用致截断。",
+      "impact": "ZeroDivisionError 崩溃，或平均值/比例计算错误。",
+      "fix": "除法前判分母；聚合空集合返回明确默认；厘清 / 与 // 语义并加测试。",
+      "source": "CWE-369"
+    },
+    {
+      "id": "LOG-014",
+      "title": "无界递归 / 缺终止条件",
+      "category": "logic",
+      "severity": "high",
+      "tags": ["recursion", "depth", "stack", "recursive"],
+      "triggers": ["def _recur", "def dfs", "def solve(", "return self.", "RecursionError", "setrecursionlimit", "recurse("],
+      "pattern": "递归函数缺少可靠基准情形，或递归深度随输入线性增长，深树/长链数据触发栈溢出。",
+      "impact": "RecursionError 崩溃；恶意输入即可打爆。",
+      "fix": "确保每次递归严格趋近基准；对深度敏感场景改迭代/显式栈或加深度上限；分治保证对数深度。",
+      "source": "CWE-674"
+    },
+    {
+      "id": "LOG-015",
+      "title": "遍历中修改容器",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["iteration", "modify", "list", "dict", "remove"],
+      "triggers": [".remove(", ".pop(", "del ", ".clear(", ".append("],
+      "pattern": "在 for 迭代同一 list/dict 时增删元素，导致跳过项、重复或 RuntimeError（dict 变大小）。",
+      "impact": "部分元素漏处理或运行时异常。",
+      "fix": "遍历副本（for x in items[:]）或倒序删除；构造新容器；dict 迭代键用 list(d.keys())。",
+      "source": "CWE-472 / Python 文档告警"
+    }
+  ]
+}
