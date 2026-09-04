@@ -199,4 +199,76 @@ check("函数示例不再内联硬编码", tpl_fn.count("cur.execute") == 0)
 tpl_file = AU.load_prompt("file_audit.md")
 check("文件模板含 examples 占位符", "{{examples}}" in tpl_file)
 
+print("\n[9] validate：双模型交叉复核（D15）")
+m_agree = Issue(rule_id="CWE-89", category=Category.SECURITY, severity=Severity.CRITICAL,
+                title="t", path="p", line_start=10, evidence="", analysis="共识x", fix="f",
+                detector="llm", votes=2, models=["qwen-plus", "deepseek-v4-flash"])
+m_only = Issue(rule_id="CWE-22", category=Category.SECURITY, severity=Severity.HIGH,
+               title="t2", path="p", line_start=20, evidence="", analysis="单源y", fix="f",
+               detector="llm", votes=1, models=["qwen-plus"])
+m_static = Issue(rule_id="R-SEC-002", category=Category.SECURITY, severity=Severity.CRITICAL,
+                 title="t3", path="p", line_start=30, evidence="", analysis="z", fix="f",
+                 detector="static")
+cr = VD.cross_review([m_agree, m_only, m_static], enabled=True, n_models=2)
+check("共识计数", cr["agreed"] == 1)
+check("单源计数", cr["single_model"] == 1)
+check("一致率计算", cr["agreement_rate"] == 0.5)
+check("单源被标注待确认", m_only.analysis.startswith(VD.REVIEW_MARK))
+check("共识项不被标注", m_agree.analysis == "共识x")
+check("静态项不被标注", m_static.analysis == "z")
+check("关闭时返回enabled=False", VD.cross_review([], enabled=False) == {"enabled": False})
+mm1 = Issue(rule_id="CWE-89", category=Category.SECURITY, severity=Severity.CRITICAL,
+            title="a", path="p9.py", line_start=5, evidence="e", analysis="A" * 40,
+            fix="f", detector="llm", models=["qwen"])
+mm2 = Issue(rule_id="R-SEC-001", category=Category.SECURITY, severity=Severity.CRITICAL,
+            title="b", path="p9.py", line_start=5, evidence="e", analysis="B",
+            fix="f", detector="llm", models=["deepseek"])
+mg = VD.cwe_merge([mm1, mm2])
+check("双模型同CWE合并为cross", len(mg) == 1 and mg[0].detector == "cross"
+      and len(mg[0].models) == 2)
+mm3 = Issue(rule_id="CWE-89", category=Category.SECURITY, severity=Severity.CRITICAL,
+            title="c", path="p9b.py", line_start=5, evidence="e", analysis="A",
+            fix="f", detector="llm", models=["qwen"])
+mm4 = Issue(rule_id="CWE-89", category=Category.SECURITY, severity=Severity.CRITICAL,
+            title="d", path="p9b.py", line_start=5, evidence="e", analysis="B",
+            fix="f", detector="llm", models=["qwen"])
+check("同模型重复不合并", len(VD.cwe_merge([mm3, mm4])) == 2)
+m_both2 = Issue(rule_id="R-SEC-001", category=Category.SECURITY, severity=Severity.CRITICAL,
+                title="三方印证", path="pc.py", line_start=1, evidence="e", analysis="x",
+                fix="f", detector="both", votes=3, models=["qwen", "deepseek"])
+m_both1 = Issue(rule_id="R-SEC-002", category=Category.SECURITY, severity=Severity.CRITICAL,
+                title="规则+单模型", path="pc.py", line_start=2, evidence="e", analysis="y",
+                fix="f", detector="both", votes=2, models=["qwen"])
+m_lone = Issue(rule_id="CWE-22", category=Category.SECURITY, severity=Severity.HIGH,
+               title="孤证", path="pc.py", line_start=3, evidence="e", analysis="z",
+               fix="f", detector="llm", models=["qwen"])
+cr2 = VD.cross_review([m_both2, m_both1, m_lone], enabled=True, n_models=2)
+check("both+双模型计入共识", cr2["agreed"] == 1)
+check("both+单模型算规则背书", cr2["confirmed_by_rule"] == 1 and not m_both1.analysis.startswith(VD.REVIEW_MARK))
+check("纯llm孤证才被标注", m_lone.analysis.startswith(VD.REVIEW_MARK))
+check("一致率分母含孤证", cr2["agreement_rate"] == 0.5)
+nd_q = Issue(rule_id="CWE-95", category=Category.SECURITY, severity=Severity.CRITICAL,
+             title="eval", path="pn.py", line_start=9, evidence="e", analysis="A" * 30,
+             fix="f", detector="llm", models=["qwen"])
+nd_d = Issue(rule_id="DISCOVERED-CWE-95-02", category=Category.SECURITY,
+             severity=Severity.CRITICAL, title="eval2", path="pn.py", line_start=9,
+             evidence="e", analysis="B", fix="f", detector="llm", models=["deepseek"])
+nd_m = VD.cwe_merge([nd_q, nd_d])
+check("DISCOVERED-CWE-x 键归一可合并", len(nd_m) == 1 and len(nd_m[0].models) == 2)
+check("Issue默认models为空", Issue(rule_id="X", category=Category.LOGIC, severity=Severity.LOW,
+                                  title="t", path="p", line_start=1, evidence="",
+                                  analysis="", fix="").models == [])
+_i = Issue.from_dict({"rule_id": "CWE-89", "category": "security", "severity": "high",
+                      "title": "t", "line_start": 1, "evidence": "e",
+                      "analysis": "a", "fix": "f", "confidence": 0.9},
+                     path="p", model="qwen-plus")
+check("from_dict写入models", _i.models == ["qwen-plus"])
+
+print("\n[10] report：HTML 渲染（D16）")
+html = RP.render_html(rep)
+check("HTML 含文档结构", "<!doctype html>" in html and "代码审计报告" in html)
+check("HTML 表格已渲染", "<table>" in html and "CWE-89" in html)
+check("HTML 内嵌样式", "<style>" in html and "border-collapse" in html)
+check("cross 检出方式有映射", RP._DET.get("cross") == "双模型共识")
+
 print(f"\n全部通过：{PASS} 项 ✓")

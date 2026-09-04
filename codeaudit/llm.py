@@ -32,6 +32,29 @@ class LLMClient:
     def available(self) -> bool:
         return bool(self.api_key and not self.api_key.startswith("sk-your"))
 
+    @classmethod
+    def for_reviewer(cls) -> "LLMClient":
+        """交叉复核用的第二模型客户端（D15）。
+
+        优先读 LLM2_API_KEY / LLM2_BASE_URL / LLM2_MODEL，
+        兼容旧键名 LLM_FALLBACK_*；都未配置时 available() 为 False，
+        调用方据此跳过交叉复核。
+        """
+        c = cls()
+        key2 = (os.getenv("LLM2_API_KEY", "").strip()
+                or os.getenv("LLM_FALLBACK_API_KEY", "").strip())
+        url2 = (os.getenv("LLM2_BASE_URL", "").strip()
+                or os.getenv("LLM_FALLBACK_BASE_URL", "").strip())
+        model2 = (os.getenv("LLM2_MODEL", "").strip()
+                  or os.getenv("LLM_FALLBACK_MODEL", "").strip())
+        if key2:
+            c.api_key = key2
+        if url2:
+            c.base_url = url2.rstrip("/")
+        if model2:
+            c.model = model2
+        return c
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         """批量向量化（DashScope/OpenAI 兼容 embeddings 端点）。带重试退避。"""
         if not self.available():

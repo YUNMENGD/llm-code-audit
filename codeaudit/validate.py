@@ -47,6 +47,52 @@ def rule_id_gate(issues: list[Issue], valid_ids: set[str]) -> list[Issue]:
     return issues
 
 
+def _norm_key(rule_id: str, amap: dict[str, str]) -> str:
+    """rule_id → 合并键：映射表优先；DISCOVERED-CWE-x-NN 提取其中的 CWE-x。
+
+    双模型常对同一问题给出不同表述（qwen 给 CWE-95、deepseek 给
+    DISCOVERED-CWE-95-02），不归一则永远合不上。
+    """
+    if rule_id in amap:
+        return amap[rule_id]
+    import re as _re
+    m = _re.match(r"DISCOVERED-(CWE-\d+)", rule_id)
+    if m:
+        return m.group(1)
+    return rule_id
+
+
+def cross_review(issues: list[Issue], *, enabled: bool,
+                 n_models: int = 2) -> dict:
+    """D15 双模型交叉复核：按实际来源模型数 len(models) 判定共识。
+
+    - static：仅规则命中，不计入模型投票。
+    - models >= 2：≥2 个模型报告同点 = 共识（detector=both/cross 均算）。
+    - detector=both 且单模型：有规则背书，计入 confirmed_by_rule，不算孤证。
+    - llm/cross 且单模型：孤证，标注「待人工确认」保留（宁审勿漏）。
+    返回统计供论文实验：agreement_rate = 共识 / (共识 + 孤证)。
+    """
+    if not enabled or n_models < 2:
+        return {"enabled": False}
+    agreed = single = by_rule = 0
+    for it in issues:
+        if it.detector == "static":
+            continue
+        if len(it.models) >= 2:
+            agreed += 1
+        elif it.detector == "both":
+            by_rule += 1                 # 单模型+规则背书，不标孤证
+        else:
+            single += 1
+            if not it.analysis.startswith(REVIEW_MARK):
+                it.analysis = (REVIEW_MARK + f"[双模型交叉复核：仅 {it.models or ['?']} 报告，"
+                               f"另一模型未见同点问题] " + it.analysis)
+    total = agreed + single
+    return {"enabled": True, "models": n_models, "agreed": agreed,
+            "single_model": single, "confirmed_by_rule": by_rule,
+            "agreement_rate": round(agreed / total, 3) if total else None}
+
+
 def confidence_gate(issues: list[Issue], drop: float = 0.5,
                     review: float = 0.7) -> list[Issue]:
     """T2 闸门：LLM 单源且置信度过低的丢弃；0.5~0.7 的标注待人工确认。
@@ -74,10 +120,17 @@ def cwe_merge(issues: list[Issue]) -> list[Issue]:
     out: list[Issue] = []
     for it in issues:
         target = None
-        key = amap.get(it.rule_id, it.rule_id)
+        key = _norm_key(it.rule_id, amap)
         for exist in out:
-            ek = amap.get(exist.rule_id, exist.rule_id)
-            if ek != key or exist.path != it.path or exist.detector == it.detector:
+            ek = _norm_key(exist.rule_id, amap)
+            if ek != key or exist.path != it.path:
+                continue
+            same_src = exist.detector == it.detector
+            # 同 detector 仅在「都是 llm 且来自不同模型」时才合并（双模型投票）
+            both_llm = exist.detector == "llm" and it.detector == "llm"
+            diff_model = bool(set(exist.models) and set(it.models)
+                              and not (set(exist.models) & set(it.models)))
+            if same_src and not (both_llm and diff_model):
                 continue
             if _overlap(exist, it):
                 target = exist
@@ -86,14 +139,19 @@ def cwe_merge(issues: list[Issue]) -> list[Issue]:
             out.append(it)
             continue
         rich, poor = (it, target) if len(it.analysis) >= len(target.analysis) else (target, it)
-        rich.detector = "both"
+        merged_models = sorted(set(rich.models) | set(poor.models))
+        if rich.detector == poor.detector == "llm":
+            rich.detector = "cross"
+        elif rich.detector != poor.detector:
+            rich.detector = "both"
+        rich.models = merged_models
+        rich.votes = rich.votes + poor.votes
         rich.verified = it.verified or target.verified
-        rich.votes = it.votes + target.votes
         rich.confidence = min(1.0, max(it.confidence, target.confidence))
         rich.source = rich.source or poor.source
         rich.line_start = min(rich.line_start, poor.line_start)
         rich.line_end = max(rich.line_end or rich.line_start, poor.line_end or poor.line_start)
-        out.remove(poor)
+        out = [x for x in out if x is not target and x is not poor]
         out.append(rich)
     return out
 
@@ -123,6 +181,7 @@ def dedupe(issues: list[Issue]) -> list[Issue]:
         old = merged[k]
         keep, drop = (it, old) if _rank(it) >= _rank(old) else (old, it)
         keep.votes = old.votes + drop.votes
+        keep.models = sorted(set(old.models) | set(drop.models))
         if keep.detector != drop.detector:
             keep.detector = "both"
             keep.confidence = min(1.0, max(keep.confidence, drop.confidence) + 0.05)
