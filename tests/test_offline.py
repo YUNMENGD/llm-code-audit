@@ -6,6 +6,9 @@
 """
 from __future__ import annotations
 
+import os
+os.environ["RAG_VECTOR"] = "0"    # 离线测试固定关键词路径，保证不联网不耗额度
+
 import sys
 from pathlib import Path
 
@@ -127,6 +130,28 @@ noisy = Issue.from_dict({"rule_id": "X", "category": "logic", "severity": "low",
                          "line_start": 1, "evidence": "a\\nb", "analysis": "c",
                          "fix": "def f():\\n    return 1", "confidence": 0.9}, path="p")
 check("字面转义符被还原(T4)", "\n" in noisy.fix and "\\n" not in noisy.fix)
+
+print("[5c] rule_id 白名单闸门")
+valid = {it["id"] for it in RT.load_knowledge()} | {r["id"] for r in RL.load_rules()}
+wrong = Issue(rule_id="CWE-5021", category=Category.SECURITY, severity=Severity.HIGH,
+              title="错引ID", path="p", line_start=5, evidence="", analysis="a", fix="f",
+              confidence=0.9, detector="llm")
+right = Issue(rule_id="CWE-89", category=Category.SECURITY, severity=Severity.CRITICAL,
+              title="正确ID", path="p", line_start=6, evidence="", analysis="a", fix="f",
+              confidence=0.9, detector="llm")
+disc = Issue(rule_id="DISCOVERED-1", category=Category.LOGIC, severity=Severity.MEDIUM,
+             title="模型自编号", path="p", line_start=7, evidence="", analysis="a", fix="f",
+             confidence=0.9, detector="llm")
+st_bad = Issue(rule_id="NOT-IN-KB", category=Category.STYLE, severity=Severity.LOW,
+               title="静态乱ID", path="p", line_start=8, evidence="", analysis="a", fix="f",
+               detector="static")
+gated2 = VD.rule_id_gate([wrong, right, disc, st_bad], valid)
+w2 = next(x for x in gated2 if x.line_start == 5)
+check("未知rule_id被纠正", w2.rule_id.startswith("DISCOVERED-CWE-5021") and "已纠正" in w2.analysis)
+check("知识库已有ID放行", next(x for x in gated2 if x.line_start == 6).rule_id == "CWE-89")
+check("模型自编号DISCOVERED放行", next(x for x in gated2 if x.line_start == 7).rule_id == "DISCOVERED-1")
+check("静态结果不纠正", next(x for x in gated2 if x.line_start == 8).rule_id == "NOT-IN-KB")
+check("空ID集合时全部放行", len(VD.rule_id_gate([wrong, right], set())) == 2)
 
 print("[6] llm 输出解析容错")
 check("裸 JSON", len(extract_json_array('[{"a":1}]')) == 1)

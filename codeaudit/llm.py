@@ -32,6 +32,42 @@ class LLMClient:
     def available(self) -> bool:
         return bool(self.api_key and not self.api_key.startswith("sk-your"))
 
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """批量向量化（DashScope/OpenAI 兼容 embeddings 端点）。带重试退避。"""
+        if not self.available():
+            raise LLMError("未配置 LLM_API_KEY，无法生成向量")
+        model = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
+        out: list[list[float]] = []
+        for i in range(0, len(texts), 8):          # 分批：兼容单次条数上限的服务
+            payload = {"model": model, "input": texts[i:i + 8], "encoding_format": "float"}
+            last_err: Exception | None = None
+            for attempt in range(self.max_retry):
+                try:
+                    out.extend(self._post_embeddings(payload))
+                    break
+                except (urllib.error.URLError, LLMError, TimeoutError) as e:
+                    last_err = e
+                    time.sleep(2 ** attempt)
+            else:
+                raise LLMError(f"向量化失败（重试 {self.max_retry} 次）：{last_err}")
+        return out
+
+    def _post_embeddings(self, payload: dict) -> list[list[float]]:
+        req = urllib.request.Request(
+            self.base_url + "/embeddings",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {self.api_key}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        try:
+            items = sorted(data["data"], key=lambda d: d.get("index", 0))
+            return [it["embedding"] for it in items]
+        except (KeyError, IndexError, TypeError) as e:
+            raise LLMError(f"embedding 响应格式异常：{str(data)[:300]}") from e
+
     def chat(self, messages: list[dict], temperature: float | None = None) -> str:
         """一次对话调用，带重试与指数退避。"""
         if not self.available():
