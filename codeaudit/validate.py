@@ -17,10 +17,34 @@ _MAP_FILE = (Path(__file__).resolve().parent.parent
              / "knowledge" / "rules" / "cwe_map.json")
 
 REVIEW_MARK = "⚠️待人工确认："
+DISCOVERED_PREFIX = "DISCOVERED"
 
 
 def check_with_rules(issue: Issue, source_lines: list[str]) -> tuple[bool, str]:
     return verify(issue, source_lines)
+
+
+def rule_id_gate(issues: list[Issue], valid_ids: set[str]) -> list[Issue]:
+    """白名单闸门：LLM 报告的 rule_id 必须真实存在于知识库/规则库。
+
+    试跑 v0.2 发现模型会把 eval 的 ID 错写成 CWE-502（应为 CWE-95），
+    错 ID 会污染溯源链。处理策略：
+    - DISCOVERED-*（模型自编号）与已在库的 ID → 放行
+    - 其余未知 ID → 降级为 DISCOVERED-<原ID>，并在 analysis 标注，保留问题不丢
+    """
+    if not valid_ids:
+        return issues
+    seq = 0
+    for it in issues:
+        if it.detector == "static":
+            continue
+        rid = it.rule_id.strip()
+        if rid in valid_ids or rid.startswith(DISCOVERED_PREFIX):
+            continue
+        seq += 1
+        it.analysis = f"[rule_id 已纠正：模型给出 {rid} 不在知识库] " + it.analysis
+        it.rule_id = f"DISCOVERED-{rid}-{seq:02d}"
+    return issues
 
 
 def confidence_gate(issues: list[Issue], drop: float = 0.5,
