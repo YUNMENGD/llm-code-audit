@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "name": "代码缺陷知识库（种子批次：安全漏洞类）",
+    "version": "0.1",
+    "note": "每条含触发词 triggers、代码模式 pattern、修复 fix、来源 source。D9-D10 持续扩充，新增必须带来源。",
+    "maintainer": "童钰涵"
+  },
+  "items": [
+    {
+      "id": "CWE-89",
+      "title": "SQL 注入",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["sql", "database", "query", "sqlite", "mysql"],
+      "triggers": ["execute", "SELECT", "INSERT INTO", "format", "%s", "f\""],
+      "pattern": "用户可控输入被拼接进 SQL 语句文本，改变语句语法结构。典型：f-string、+ 拼接、.format 后整体传给 execute。",
+      "impact": "读取/篡改/删除任意数据；配合 INTO OUTFILE 等可获取服务器权限。",
+      "fix": "始终使用参数化查询（占位符 + 参数元组）；表名列名不可参数化时用白名单映射校验。",
+      "source": "https://cwe.mitre.org/data/definitions/89.html ; OWASP Top 10 A03:2021"
+    },
+    {
+      "id": "CWE-79",
+      "title": "跨站脚本 XSS",
+      "category": "security",
+      "severity": "high",
+      "tags": ["xss", "html", "template", "render"],
+      "triggers": ["innerHTML", "Markup", "|safe", "html=", "dangerouslySetInnerHTML"],
+      "pattern": "用户输入未经转义直接嵌入 HTML 响应，浏览器将其作为脚本执行。",
+      "impact": "窃取会话 Cookie、钓鱼、以受害者身份操作。",
+      "fix": "输出编码/模板自动转义；富文本用成熟 sanitizer 白名单过滤。",
+      "source": "https://cwe.mitre.org/data/definitions/79.html"
+    },
+    {
+      "id": "CWE-78",
+      "title": "OS 命令注入",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["command", "shell", "subprocess", "exec"],
+      "triggers": ["os.system", "subprocess", "shell=True", "popen", "Popen"],
+      "pattern": "外部输入拼接进 shell 命令字符串；分号、管道、反引号可追加执行任意命令。",
+      "impact": "远程代码执行，主机完全沦陷。",
+      "fix": "subprocess.run 传参数列表且 shell=False；确需 shell 时对参数做 shlex.quote。",
+      "source": "https://cwe.mitre.org/data/definitions/78.html"
+    },
+    {
+      "id": "CWE-22",
+      "title": "路径遍历",
+      "category": "security",
+      "severity": "high",
+      "tags": ["path", "traversal", "file", "download"],
+      "triggers": ["open(", "../", "os.path.join", "sendfile", "FileResponse"],
+      "pattern": "用户提供的文件名直接拼接路径，../../ 可跳出预期目录读取任意文件。",
+      "impact": "读取配置、密钥、源码等任意服务器文件。",
+      "fix": "os.path.realpath 后校验是否仍在允许根目录内；文件名白名单化。",
+      "source": "https://cwe.mitre.org/data/definitions/22.html"
+    },
+    {
+      "id": "CWE-502",
+      "title": "不安全反序列化",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["pickle", "yaml", "deserialization", "marshal"],
+      "triggers": ["pickle.load", "yaml.load", "marshal", "torch.load"],
+      "pattern": "对不可信数据使用 pickle/yaml.load/marshal 等可执行代码的反序列化格式。",
+      "impact": "构造恶意载荷即远程代码执行。",
+      "fix": "数据交换用 JSON；yaml 用 safe_load；torch.load 设 weights_only=True。",
+      "source": "https://cwe.mitre.org/data/definitions/502.html"
+    },
+    {
+      "id": "CWE-798",
+      "title": "硬编码凭据",
+      "category": "security",
+      "severity": "high",
+      "tags": ["hardcode", "credential", "secret", "password", "apikey"],
+      "triggers": ["api_key =", "password =", "secret =", "token =", "AKIA"],
+      "pattern": "密钥、口令、token 明文写入源码或配置并入库。",
+      "impact": "仓库泄露即凭据泄露；git 历史中永久存在，删文件也无法挽回。",
+      "fix": "环境变量或密钥管理服务；泄露后立刻轮换；用 gitleaks 类工具扫历史。",
+      "source": "https://cwe.mitre.org/data/definitions/798.html ; OWASP A07:2021"
+    },
+    {
+      "id": "CWE-327",
+      "title": "使用破损加密算法",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["crypto", "md5", "sha1", "des", "ecb"],
+      "triggers": ["md5", "sha1", "DES", "ECB", "hashlib"],
+      "pattern": "口令哈希或签名使用 MD5/SHA1/DES/ECB 等已破解算法。",
+      "impact": "碰撞攻击、彩虹表还原口令、密文模式泄露。",
+      "fix": "口令用 bcrypt/argon2；通用哈希 SHA-256+；对称加密 AES-GCM。",
+      "source": "https://cwe.mitre.org/data/definitions/327.html"
+    },
+    {
+      "id": "CWE-330",
+      "title": "不安全随机数",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["random", "token", "nonce", "otp"],
+      "triggers": ["random.", "randint", "uuid1", "seed("],
+      "pattern": "令牌/验证码/会话 ID 生成使用可预测的伪随机源（random 模块、时间种子）。",
+      "impact": "攻击者推算后续输出，伪造令牌实现账户接管。",
+      "fix": "安全场景一律 secrets 模块 / os.urandom / uuid4。",
+      "source": "https://cwe.mitre.org/data/definitions/330.html"
+    },
+    {
+      "id": "CWE-295",
+      "title": "证书校验缺失",
+      "category": "security",
+      "severity": "high",
+      "tags": ["tls", "ssl", "https", "certificate", "mitm"],
+      "triggers": ["verify=False", "CERT_NONE", "check_hostname", "ssl._create"],
+      "pattern": "HTTPS 请求关闭证书校验或主机名校验。",
+      "impact": "中间人可解密/篡改全部通信内容。",
+      "fix": "保持默认校验；自签场景配置可信 CA bundle。",
+      "source": "https://cwe.mitre.org/data/definitions/295.html"
+    },
+    {
+      "id": "CWE-918",
+      "title": "服务端请求伪造 SSRF",
+      "category": "security",
+      "severity": "high",
+      "tags": ["ssrf", "url", "fetch", "webhook"],
+      "triggers": ["requests.get", "urlopen", "URLInput", "webhook"],
+      "pattern": "服务端用用户提供的 URL 发起请求，可指向内网地址/元数据端点。",
+      "impact": "探测内网、读取云元数据获取临时凭据。",
+      "fix": "URL 白名单域名校验；解析后 IP 禁止回环/私网段；禁用重定向或逐跳校验。",
+      "source": "https://cwe.mitre.org/data/definitions/918.html ; OWASP A10:2021"
+    },
+    {
+      "id": "CWE-434",
+      "title": "不受限制的文件上传",
+      "category": "security",
+      "severity": "high",
+      "tags": ["upload", "file", "extension"],
+      "triggers": ["upload", "filename", ".save(", "content_type"],
+      "pattern": "上传仅看扩展名/Content-Type，未校验真实类型，未隔离存储目录。",
+      "impact": "上传 webshell 获得代码执行；超大文件耗尽存储。",
+      "fix": "magic number 校验真实类型；扩展名白名单；随机化文件名；存储于不可执行目录。",
+      "source": "https://cwe.mitre.org/data/definitions/434.html"
+    },
+    {
+      "id": "CWE-862",
+      "title": "缺失授权校验",
+      "category": "security",
+      "severity": "high",
+      "tags": ["auth", "permission", "idor", "access"],
+      "triggers": ["user_id", "order_id", "current_user", "decorator"],
+      "pattern": "接口按资源 ID 直接返回数据，未校验该资源属于当前用户（IDOR）。",
+      "impact": "改一个 ID 即可遍历他人全部数据。",
+      "fix": "每处数据访问绑定所有权过滤（WHERE owner_id = current_user.id）；统一权限装饰器。",
+      "source": "https://cwe.mitre.org/data/definitions/862.html ; OWASP A01:2021"
+    },
+    {
+      "id": "CWE-400",
+      "title": "无界输入导致资源耗尽",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["dos", "limit", "pagination", "memory"],
+      "triggers": ["readlines", "LIMIT", "page_size", "json.load", "request.json"],
+      "pattern": "请求体/分页大小/上传大小不设上限，一次性读入全部数据。",
+      "impact": "单个请求打满内存或 CPU，服务拒绝。",
+      "fix": "入口层限制体大小；分页强制 per_page 上限；流式处理大文件。",
+      "source": "https://cwe.mitre.org/data/definitions/400.html"
+    },
+    {
+      "id": "CWE-200",
+      "title": "敏感信息泄露至前端/日志",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["leak", "log", "password", "stacktrace", "token"],
+      "triggers": ["logging.info", "print(", "password", "token", "debug", "stack"],
+      "pattern": "日志或错误响应打印口令、token、完整堆栈等敏感内容。",
+      "impact": "日志系统访问面广，凭据二次泄露。",
+      "fix": "日志脱敏中间件；生产错误响应只给 trace id；按字段名掩码。",
+      "source": "https://cwe.mitre.org/data/definitions/200.html"
+    },
+    {
+      "id": "CWE-352",
+      "title": "CSRF 跨站请求伪造",
+      "category": "security",
+      "severity": "medium",
+      "tags": ["csrf", "form", "state-changing", "session"],
+      "triggers": ["POST", "form", "session", "cookie", "state"],
+      "pattern": "修改状态的接口仅凭 Cookie 会话鉴权，无 CSRF token / SameSite 防护。",
+      "impact": "诱导已登录用户访问恶意页面即代为执行操作。",
+      "fix": "同步器 token 模式；Cookie 设 SameSite=Lax/Strict；对 JSON 接口校验自定义头。",
+      "source": "https://cwe.mitre.org/data/definitions/352.html"
+    }
+  ]
+}

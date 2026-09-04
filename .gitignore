@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 密钥与本地配置：严禁提交
+.env
+.env.local
+*.key
+secrets/
+
+# 运行产物
+data/
+out/
+reports/
+*.log
+.cache/
+chroma/
+faiss_index/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

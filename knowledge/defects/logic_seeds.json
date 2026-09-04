@@ -1,0 +1,129 @@
+{
+  "meta": {
+    "name": "代码缺陷知识库（种子批次：逻辑错误与异常处理类）",
+    "version": "0.1",
+    "maintainer": "童钰涵"
+  },
+  "items": [
+    {
+      "id": "LOG-001",
+      "title": "边界条件处理不足",
+      "category": "logic",
+      "severity": "high",
+      "tags": ["boundary", "index", "empty", "range"],
+      "triggers": ["[0]", "[-1]", "len(", "range(", "pop(", "index("],
+      "pattern": "未处理空集合/零长度/越界索引/空输入即取首元素等边界，正常路径掩盖了边界故障。",
+      "impact": "特定输入下抛异常或返回错误结果，多为偶发线上故障。",
+      "fix": "显式处理空与单元素情形；切片代替索引；入口处参数校验。",
+      "source": "CWE-129 / 经典软件缺陷模式"
+    },
+    {
+      "id": "LOG-002",
+      "title": "异常吞噬与控制流混淆",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["exception", "except", "pass", "error"],
+      "triggers": ["except", "pass", "continue", "return None"],
+      "pattern": "except 后 pass 或返回哨兵值（None/-1/False），调用方无法区分「失败」与「正常空值」。",
+      "impact": "错误被静默降级，脏数据向下游扩散。",
+      "fix": "捕获具体异常并记录；不能恢复就向上抛；返回契约明确区分失败态。",
+      "source": "CWE-390 / Google Python Style Guide"
+    },
+    {
+      "id": "LOG-003",
+      "title": "竞态条件（TOCTOU）",
+      "category": "logic",
+      "severity": "high",
+      "tags": ["race", "concurrent", "thread", "lock", "check"],
+      "triggers": ["if os.path.exists", "threading", "asyncio", "global", "+= "],
+      "pattern": "先检查后使用之间存在时间窗，或共享可变状态未加锁；多线程/协程下交错执行破坏不变量。",
+      "impact": "低概率难复现的数据损坏；安全检查可被绕过。",
+      "fix": "用原子操作/锁保护临界区；文件场景用 O_EXCL 或临时文件+rename。",
+      "source": "CWE-362 / CWE-367"
+    },
+    {
+      "id": "LOG-004",
+      "title": "资源泄漏",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["resource", "leak", "file", "connection", "close"],
+      "triggers": ["open(", "connect(", "close()", "finally"],
+      "pattern": "异常路径下 close 不被执行；循环中打开文件/连接不释放。",
+      "impact": "句柄耗尽、连接池打满、数据未刷盘丢失。",
+      "fix": "with 上下文管理器统一管理；长生命周期对象集中关闭。",
+      "source": "CWE-404 / CWE-772"
+    },
+    {
+      "id": "LOG-005",
+      "title": "逻辑短路/条件恒真恒假",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["condition", "and", "or", "always", "boolean"],
+      "triggers": ["if", "and", "or", "not", "while"],
+      "pattern": "and/or 优先级误用（如 `x == 1 or 2`）、复制粘贴导致分支永远不可达、while 条件恒真。",
+      "impact": "校验形同虚设，某些分支是死代码。",
+      "fix": "用 `x in (1, 2)`；审查每个 or/and 组合；开启 linter（ruff E714 等）。",
+      "source": "CWE-480 / MISRA 衍生检查项"
+    },
+    {
+      "id": "LOG-006",
+      "title": "浮点数直接相等比较",
+      "category": "logic",
+      "severity": "low",
+      "tags": ["float", "compare", "precision"],
+      "triggers": ["== 0.0", "float", "round(", "0.1"],
+      "pattern": "对浮点运算结果使用 == 精确比较，二进制舍入误差使判断意外失败。",
+      "impact": "金额/科学计算出现差一分钱级错误。",
+      "fix": "math.isclose 或容差比较；货币用 Decimal 或整数分。",
+      "source": "CWE-1077 / IEEE 754"
+    },
+    {
+      "id": "LOG-007",
+      "title": "可变对象别名共享",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["alias", "mutable", "copy", "default"],
+      "triggers": ["= []", ".copy", "deepcopy", "append", "extend"],
+      "pattern": "浅拷贝/直接赋值共享嵌套可变对象，一处修改另一处变化；或函数默认参数持有可变对象。",
+      "impact": "状态跨调用泄漏，产生极难定位的累积性 bug。",
+      "fix": "需要独立副本用 copy.deepcopy；默认参数用 None + 函数内创建。",
+      "source": "CWE-1112 / Effective Python Item 19"
+    },
+    {
+      "id": "LOG-008",
+      "title": "错误的循环退出与偏移",
+      "category": "logic",
+      "severity": "medium",
+      "tags": ["loop", "off-by-one", "break", "index"],
+      "triggers": ["for", "range(", "while", "break", "continue", "pop("],
+      "pattern": "遍历中修改被遍历容器；off-by-one 边界（< vs <=）；break 误用于退出外层。",
+      "impact": "漏处理元素、死循环或 IndexError。",
+      "fix": "倒序删除或构造新列表；range 边界单元测试断言；嵌套退出用标志位/函数拆分。",
+      "source": "CWE-193"
+    },
+    {
+      "id": "ENG-001",
+      "title": "静默失败与无迹可寻",
+      "category": "engineering",
+      "severity": "medium",
+      "tags": ["logging", "observability", "error", "silent"],
+      "triggers": ["except", "print", "logging", "raise"],
+      "pattern": "错误路径无日志、无监控埋点、无上下文（时间/参数/trace id），故障后无法复盘。",
+      "impact": "MTTR 拉长；同类问题反复发生。",
+      "fix": "结构化日志记录异常与关键参数；对外接口返回可关联的 trace id。",
+      "source": "Google SRE Book 可观测性章节"
+    },
+    {
+      "id": "ENG-002",
+      "title": "依赖版本未锁定",
+      "category": "engineering",
+      "severity": "low",
+      "tags": ["dependency", "requirements", "version", "supply-chain"],
+      "triggers": ["requirements.txt", "pip install", ">=", "latest"],
+      "pattern": "依赖不设版本上界约束缺失，或直接装 latest，构建不可复现。",
+      "impact": "上游变更/供应链攻击导致某天突然构建失败或行为漂移。",
+      "fix": "requirements 锁精确版本或哈希（pip-tools/uv）；CI 与生产同锁文件。",
+      "source": "OWASP A06:2021 易受攻击和过时的组件"
+    }
+  ]
+}

@@ -1,0 +1,177 @@
+{
+  "meta": {
+    "name": "代码规则库（硬性可校验部分）",
+    "version": "0.1",
+    "note": "pattern 为 Python re 正则；exclude 为同行豁免词。新增规则需评审并附来源。",
+    "maintainer": "童钰涵"
+  },
+  "rules": [
+    {
+      "id": "R-SEC-001",
+      "title": "SQL 字符串拼接",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-89 https://cwe.mitre.org/data/definitions/89.html",
+      "pattern": "execute\\w*\\s*\\(\\s*f[\"']|execute\\w*\\s*\\([^)]*\\.format\\(|execute\\w*\\s*\\(\\s*[\"'][^\"']*[\"']\\s*(%|\\+)|execute\\w*\\s*\\(\\s*\\w+\\s*(\\+|%)",
+      "exclude": ["# nosec"],
+      "why": "SQL 语句由 f-string、% 格式化、.format 或字符串拼接构造，用户输入可改变语句结构。（参数化查询 execute(\"...%s\", (v,)) 不会命中本规则）",
+      "impact": "攻击者可注入任意 SQL，读取或篡改全部数据。",
+      "suggestion": "使用参数化查询：cursor.execute(\"SELECT ... WHERE id=%s\", (user_id,))"
+    },
+    {
+      "id": "R-SEC-002",
+      "title": "os.system 执行外部命令",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-78 https://cwe.mitre.org/data/definitions/78.html",
+      "pattern": "os\\.system\\s*\\(",
+      "exclude": ["# nosec"],
+      "why": "os.system 经 shell 解释命令，拼接的变量可注入分号/管道等执行任意命令。",
+      "impact": "远程代码执行，服务器被完全控制。",
+      "suggestion": "改用 subprocess.run([...], shell=False) 传列表参数，杜绝 shell 注入。"
+    },
+    {
+      "id": "R-SEC-003",
+      "title": "eval / exec 动态执行",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-95 https://cwe.mitre.org/data/definitions/95.html",
+      "pattern": "\\b(eval|exec)\\s*\\(",
+      "why": "eval/exec 会把输入当作 Python 代码执行。",
+      "impact": "任意代码执行。",
+      "suggestion": "表达式求值用 ast.literal_eval；其他场景改为显式分支逻辑。"
+    },
+    {
+      "id": "R-SEC-004",
+      "title": "pickle 反序列化不可信数据",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-502 https://cwe.mitre.org/data/definitions/502.html",
+      "pattern": "pickle\\.loads?\\s*\\(|yaml\\.load\\s*\\((?![^)]*Safe)",
+      "why": "pickle/yaml.load 反序列化可构造 __reduce__ 载荷执行任意代码。",
+      "impact": "远程代码执行。",
+      "suggestion": "改用 json；必须用 yaml 时传 Loader=yaml.SafeLoader。"
+    },
+    {
+      "id": "R-SEC-005",
+      "title": "verify=False 关闭 TLS 证书校验",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-295 https://cwe.mitre.org/data/definitions/295.html",
+      "pattern": "verify\\s*=\\s*False",
+      "why": "关闭证书校验后 HTTPS 失去防中间人能力。",
+      "impact": "中间人可窃取/篡改传输数据。",
+      "suggestion": "删除 verify=False；自签证书应配置 CA bundle：verify='ca.pem'。"
+    },
+    {
+      "id": "R-SEC-006",
+      "title": "疑似硬编码密钥/口令",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-798 https://cwe.mitre.org/data/definitions/798.html",
+      "pattern": "(?i)(api_?key|secret|password|passwd|token)\\s*=\\s*[\"'][^\"']{8,}[\"']",
+      "why": "凭据以明文写入源码，会随仓库历史永久泄露。",
+      "impact": "密钥泄露，可被用于冒用服务或解密数据。",
+      "suggestion": "改从环境变量/密钥管理服务读取；已泄露的密钥立即轮换。"
+    },
+    {
+      "id": "R-SEC-007",
+      "title": "MD5/SHA1 用于口令或签名",
+      "category": "security",
+      "severity": "medium",
+      "source": "CWE-327 https://cwe.mitre.org/data/definitions/327.html",
+      "pattern": "hashlib\\.(md5|sha1)\\s*\\(",
+      "why": "MD5/SHA1 已被碰撞攻破，不适合安全用途。",
+      "impact": "口令可被快速彩虹表/碰撞攻击还原。",
+      "suggestion": "口令用 bcrypt/argon2；签名用 SHA-256 以上。"
+    },
+    {
+      "id": "R-SEC-008",
+      "title": "subprocess shell=True",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-78 https://cwe.mitre.org/data/definitions/78.html",
+      "pattern": "shell\\s*=\\s*True",
+      "why": "shell=True 时字符串命令由 shell 解析，变量拼接即成命令注入。",
+      "impact": "远程代码执行。",
+      "suggestion": "去掉 shell=True，命令与参数写成列表。"
+    },
+    {
+      "id": "R-LOG-001",
+      "title": "裸 except 吞掉所有异常",
+      "category": "logic",
+      "severity": "medium",
+      "source": "PEP8 / CWE-390",
+      "pattern": "except\\s*(:|Exception\\s*:|BaseException\\s*:)",
+      "why": "捕获全部异常且不处理（或仅 pass），真实错误被静默掩盖。",
+      "impact": "故障不可见，问题扩散到下游才暴露，排障成本极高。",
+      "suggestion": "只捕获预期的具体异常类型；无法处理就记录日志后 raise。"
+    },
+    {
+      "id": "R-LOG-002",
+      "title": "可变默认参数",
+      "category": "logic",
+      "severity": "medium",
+      "source": "CWE-1112 / Python 常见陷阱",
+      "pattern": "def\\s+\\w+\\([^)]*=(\\[\\]|\\{\\}|set\\(\\))",
+      "why": "列表/字典默认值在函数定义时创建一次，跨调用共享状态。",
+      "impact": "数据意外累积，产生难以复现的 bug。",
+      "suggestion": "默认 None，函数内 if x is None: x = []。"
+    },
+    {
+      "id": "R-LOG-003",
+      "title": "is 比较字面量",
+      "category": "logic",
+      "severity": "low",
+      "source": "PEP8 / CPython 实现依赖",
+      "pattern": "\\bis\\s+(\"|'|[0-9]+\\b(?!!))",
+      "why": "is 比较对象身份而非值，对小整数/字符串的行为是实现细节。",
+      "impact": "某些取值下判断静默失效。",
+      "suggestion": "值比较用 ==，仅 None 用 is None。"
+    },
+    {
+      "id": "R-ENG-001",
+      "title": "文件/连接未用 with 管理",
+      "category": "engineering",
+      "severity": "low",
+      "source": "CWE-404 / PEP8",
+      "pattern": "=\\s*(open|sqlite3\\.connect|requests\\.(get|post))\\s*\\(",
+      "why": "异常路径下资源不会被释放。",
+      "impact": "句柄泄漏、数据未刷盘。",
+      "suggestion": "使用 with 上下文管理器。"
+    },
+    {
+      "id": "R-ENG-002",
+      "title": "TODO/FIXME 未清理",
+      "category": "style",
+      "severity": "low",
+      "source": "团队规约",
+      "pattern": "#\\s*(TODO|FIXME|HACK|XXX)",
+      "why": "临时代码标记长期滞留，说明欠账未还。",
+      "impact": "关键缺陷可能被无限期搁置。",
+      "suggestion": "转为 Issue 跟踪并从代码中清除，或完成修复。"
+    },
+    {
+      "id": "R-SEC-009",
+      "title": "随机数用于安全场景",
+      "category": "security",
+      "severity": "medium",
+      "source": "CWE-330",
+      "pattern": "random\\.(random|randint|choice|sample)\\s*\\(.*(token|code|salt|pass|nonce|key)",
+      "why": "random 模块是伪随机（MT19937），可被预测。",
+      "impact": "令牌/验证码可被推算，导致账户接管。",
+      "suggestion": "安全场景用 secrets.token_urlsafe / secrets.choice。"
+    },
+    {
+      "id": "R-SEC-010",
+      "title": "调试模式对外开启",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-489",
+      "pattern": "debug\\s*=\\s*True|run\\s*\\([^)]*debug\\s*=\\s*True",
+      "why": "Flask 等框架 debug 模式暴露交互式调试器与堆栈。",
+      "impact": "远程代码执行与信息泄露。",
+      "suggestion": "生产配置强制 debug=False，由环境变量控制。"
+    }
+  ]
+}

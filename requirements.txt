@@ -1,0 +1,13 @@
+# 核心依赖（脚手架阶段即可用）
+python-dotenv>=1.0.0
+
+# D12 知识库检索阶段启用
+# chromadb>=0.5.0
+# numpy>=1.26.0
+
+# D14 精确代码解析阶段启用（比内置 ast 支持 Java/C++）
+# tree-sitter>=0.23.0
+# tree-sitter-languages>=1.10.0
+
+# 测试
+pytest>=8.0.0
