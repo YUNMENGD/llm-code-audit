@@ -93,6 +93,40 @@ def cross_review(issues: list[Issue], *, enabled: bool,
             "agreement_rate": round(agreed / total, 3) if total else None}
 
 
+def guard_suppress(issues: list[Issue], cov_map: dict[str, dict[str, set[int]]],
+                   *, window: int = 3) -> tuple[list[Issue], list[str]]:
+    """抑制「API 名匹配但防护已到位」的 LLM 误报。
+
+    cov_map: 文件路径 → {CWE/规则ID: 防护点行号集合}（按文件隔离，防跨文件串位）。
+    仅作用于 llm 单源告警（static/both 有规则背书不抑制）；
+    告警行与同文件防护点距离 ≤ window 才抑制——离防护代码那么近还报，
+    大概率就是白名单误报（neg03 里 safe_load 被报 CWE-502 的形态）。
+    返回 (保留的告警, 被抑制说明列表)。
+    """
+    if not cov_map:
+        return issues, []
+    amap = _load_map()
+    kept: list[Issue] = []
+    suppressed: list[str] = []
+    for it in issues:
+        if it.detector != "llm":
+            kept.append(it)
+            continue
+        cov = cov_map.get(it.path) or {}
+        key = _norm_key(it.rule_id, amap)
+        pts = cov.get(key)
+        if pts:
+            lo = it.line_start
+            hi = it.line_end or lo
+            near = [p for p in pts if lo - window <= p <= hi + window]
+            if near:
+                suppressed.append(
+                    f"{Path(it.path).name}:{lo} {it.rule_id} ← 防护点 L{near[0]} ({key})")
+                continue
+        kept.append(it)
+    return kept, suppressed
+
+
 def confidence_gate(issues: list[Issue], drop: float = 0.5,
                     review: float = 0.7) -> list[Issue]:
     """T2 闸门：LLM 单源且置信度过低的丢弃；0.5~0.7 的标注待人工确认。

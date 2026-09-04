@@ -48,6 +48,13 @@ def main(argv: list[str] | None = None) -> int:
     k = sub.add_parser("kb", help="检索知识库")
     k.add_argument("query")
     k.add_argument("-n", type=int, default=5)
+    ev = sub.add_parser("eval", help="评测基准：precision/recall/F1")
+    ev.add_argument("bench", nargs="?", default="examples/bench")
+    ev.add_argument("--static", action="store_true",
+                    help="仅静态规则（免密钥验证评测器）")
+    ev.add_argument("--runs", type=int, default=1,
+                    help="多轮评测（配合 D17 缓存，追加轮近似免费）")
+    ev.add_argument("--cross-review", dest="cross", action="store_true", default=None)
     sub.add_parser("selfcheck", help="环境自检")
 
     a = ap.parse_args(argv)
@@ -66,6 +73,24 @@ def main(argv: list[str] | None = None) -> int:
         for it in items:
             print(f"  [{it['id']}] {it['title']}（score={it['score']}，{it.get('source', '')}）")
         return 0
+
+    if a.cmd == "eval":
+        from .evalb import run_eval
+        res = run_eval(a.bench, static_only=a.static, runs=a.runs,
+                       cross_review=a.cross)
+        mode = "静态规则" if a.static else "完整审计"
+        for n, p in enumerate(res["runs"], 1):
+            print(f"[{mode} 第{n}轮] TP={p['tp']} FP={len(p['fp'])} FN={len(p['fn'])} "
+                  f"建议={p['advisory']} "
+                  f"P={p['precision']:.3f} R={p['recall']:.3f} F1={p['f1']:.3f}")
+            for x in p["fp"]:
+                print(f"    误报: {x}")
+            for x in p["fn"]:
+                print(f"    漏报: {x}")
+        avg = res["avg"]
+        print(f"均值: P={avg['precision']:.3f} R={avg['recall']:.3f} "
+              f"F1={avg['f1']:.3f} | 多轮稳定={res['stable_across_runs']}")
+        return 0 if avg["precision"] >= 0.8 and avg["recall"] >= 0.8 else 1
 
     if a.cmd == "check":
         from .report import render_markdown

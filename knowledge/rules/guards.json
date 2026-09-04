@@ -1,0 +1,96 @@
+{
+  "meta": {
+    "name": "防护特征规则（guard）",
+    "note": "静态识别『该防护已到位』的代码特征；与 LLM 告警按 CWE+行窗口匹配后抑制误报。protects 为被覆盖的 CWE。维护同 hard_rules.json 纪律：pattern 必须可解释、宁缺毋滥。",
+    "version": "0.1"
+  },
+  "guards": [
+    {
+      "id": "G-YAML-SAFE",
+      "title": "yaml 安全加载",
+      "pattern": "yaml\\.safe_load|SafeLoader",
+      "protects": ["CWE-502"],
+      "why": "safe_load/SafeLoader 不执行任意构造，反序列化 RCE 面已消除"
+    },
+    {
+      "id": "G-REALPATH",
+      "title": "路径规范化+基目录校验",
+      "pattern": "startswith\\(|os\\.path\\.commonpath|relative_to\\(",
+      "requires": "realpath|abspath",
+      "protects": ["CWE-22"],
+      "why": "realpath 后做前缀/包含校验，目录穿越已阻断"
+    },
+    {
+      "id": "G-PARAMQUERY",
+      "title": "参数化 SQL",
+      "pattern": "execute\\(\\s*[\"'][^\"']*[?%][^\"']*[\"']\\s*,",
+      "protects": ["CWE-89"],
+      "why": "占位符+参数元组由驱动转义，SQL 结构不可被输入改变"
+    },
+    {
+      "id": "G-SHELL-FALSE",
+      "title": "子进程不经 shell",
+      "pattern": "shell\\s*=\\s*False|subprocess\\.(run|Popen|call|check_output)\\s*\\(\\s*\\[",
+      "protects": ["CWE-78"],
+      "why": "列表参数不经 shell 解释，无元字符注入面"
+    },
+    {
+      "id": "G-LOCKED",
+      "title": "显式锁保护",
+      "pattern": "with\\s+\\w*[Ll]ock|with self\\._lock|Lock\\(\\)",
+      "protects": ["LOG-003", "CWE-362"],
+      "why": "共享状态更新在临界区内，TOCTOU 窗口已消除"
+    },
+    {
+      "id": "G-BUILTIN-SQLITE",
+      "title": "with 管理 sqlite 连接",
+      "pattern": "with\\s+sqlite3\\.connect",
+      "protects": ["LOG-004", "CWE-404"],
+      "why": "上下文管理器保证异常路径关闭"
+    },
+    {
+      "id": "G-WITH-OPEN",
+      "title": "with 管理文件资源",
+      "pattern": "with\\s+.*open\\(",
+      "protects": ["LOG-004", "CWE-404", "ENG-001"],
+      "why": "with 上下文中的文件对象已妥善管理，再报泄漏即误报"
+    },
+    {
+      "id": "G-GET-DEFAULT",
+      "title": "带默认值的 .get 不会返回 None",
+      "pattern": "\\.get\\([^)]*,[^)]*\\)",
+      "protects": ["LOG-012", "CWE-476"],
+      "why": "两参数 get 恒有返回值，紧邻的取值使用不存在判空缺失"
+    },
+    {
+      "id": "G-TERNARY-GUARD",
+      "title": "同行三元短路兜底",
+      "pattern": "if\\s+\\w+\\s+else",
+      "protects": ["LOG-001", "LOG-013"],
+      "why": "`x[0] if x else 默认` 已就地处理空集合/除零，再报边界即误报"
+    },
+    {
+      "id": "G-ENV-GET",
+      "title": "凭据经 environ.get 运行时读取",
+      "pattern": "environ\\.get\\(|environ\\[",
+      "protects": ["CWE-798", "CWE-532", "ENG-010"],
+      "why": "运行时从环境变量取值，凭据不落在源码/日志中"
+    },
+    {
+      "id": "G-HASH-PURPOSE",
+      "title": "哈希用于非安全用途",
+      "pattern": "md5\\(|sha1\\(",
+      "requires": "cache|dedup|checksum|etag|fingerprint|integrity",
+      "protects": ["CWE-327"],
+      "why": "内容寻址/校验和场景不构成口令或签名强度问题"
+    },
+    {
+      "id": "G-ENVNAME-ONLY",
+      "title": "凭据按环境变量名引用",
+      "pattern": "(?i)(password|secret|token|api_key)[^=]*=\\s*[\"'][A-Z][A-Z0-9_]+[\"']",
+      "requires": "environ",
+      "protects": ["CWE-798", "CWE-532"],
+      "why": "右值全大写字符串是环境变量名而非凭据值，密钥不入库不入日志"
+    }
+  ]
+}

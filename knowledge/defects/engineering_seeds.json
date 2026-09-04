@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "name": "工程实践知识库（D9-D11 扩容：engineering 类目首批）",
+    "version": "0.1",
+    "maintainer": "team"
+  },
+  "items": [
+    {
+      "id": "ENG-003",
+      "title": "环境差异靠代码内硬编码判断",
+      "category": "engineering",
+      "severity": "medium",
+      "tags": ["config", "environment", "hardcode"],
+      "triggers": ["if DEBUG", "localhost", "127.0.0.1", "env ==", "IS_PROD", ".local"],
+      "pattern": "在业务代码里用硬编码主机名/环境开关区分 prod/dev，配置散落各文件。",
+      "impact": "上线漏改一处即出生产事故；配置不可审计。",
+      "fix": "配置集中于 settings 层（环境变量 + 类型校验，如 pydantic-settings），业务代码只读注入值。",
+      "source": "12-Factor App III. Config"
+    },
+    {
+      "id": "ENG-004",
+      "title": "依赖未锁版本或来源不可信",
+      "category": "engineering",
+      "severity": "high",
+      "tags": ["dependency", "supply-chain", "lock"],
+      "triggers": ["pip install", ">=0", "requirements.txt", "latest", "git+", "http://"],
+      "pattern": "requirements 用浮动版本/latest/git+http 源，不同环境装出不同栈。",
+      "impact": "构建不可复现；上游变更或供应链投毒直接进生产。",
+      "fix": "锁精确版本+哈希（pip-tools/uv lock）；仅官方 PyPI；定期 pip-audit 扫已知 CVE。",
+      "source": "OWASP A06:2021 / PEP 665"
+    },
+    {
+      "id": "ENG-005",
+      "title": "关键路径无测试或测试即文档缺失",
+      "category": "engineering",
+      "severity": "medium",
+      "tags": ["test", "coverage", "ci"],
+      "triggers": ["def main(", "# no tests", "TODO test", "assert "],
+      "pattern": "核心计算/状态变更函数完全没有对应测试用例；断言写死期望值依赖真实外部服务。",
+      "impact": "回归无守门，改动靠人肉；测试不稳定 CI 失去信任。",
+      "fix": "先为缺陷修复处补一个回归测试；外部边界用 mock/fake；跑在 CI 上而不是本地口头。",
+      "source": "工程共识 / Google Testing Blog"
+    },
+    {
+      "id": "ENG-006",
+      "title": "异常在错误的层被消化",
+      "category": "engineering",
+      "severity": "medium",
+      "tags": ["exception", "boundary", "wrap", "context"],
+      "triggers": ["except Exception", "raise e", "raise", "logger.error", "traceback"],
+      "pattern": "低层模块捕获宽异常后返回 None 或吞掉；重抛时丢失原异常链（raise e 而非 raise）。",
+      "impact": "故障根因不可追溯；上层拿着假成功数据继续跑。",
+      "fix": "只在能处理或能转换语义的层捕获；重新抛出用 raise（保留 __cause__）或 raise X from e；记录含上下文的 error。",
+      "source": "PEP 3134 / 异常最佳实践"
+    },
+    {
+      "id": "ENG-007",
+      "title": "全局可变单例/模块级共享状态",
+      "category": "engineering",
+      "severity": "medium",
+      "tags": ["global", "singleton", "state", "testability"],
+      "triggers": ["global ", "_INSTANCE", "_state = {}", "_cache = {}", "app = Flask"],
+      "pattern": "模块级可变字典/单例承载业务状态，多线程共享修改；测试间互相污染。",
+      "impact": "隐式耦合、竞态、测试不可重复。",
+      "fix": "依赖注入：状态挂在显式生命周期对象上由入口构造传入；确需全局者只读或加锁。",
+      "source": "SRE / 测试可维护性共识"
+    },
+    {
+      "id": "ENG-008",
+      "title": "日志级别错用与无结构日志",
+      "category": "engineering",
+      "severity": "low",
+      "tags": ["logging", "level", "observability"],
+      "triggers": ["logging.info('error", "logger.warning", "logging.error('正常", "debug(", "info("],
+      "pattern": "正常流程打 error、真实故障打 info；消息为自由文本，无字段化关键上下文。",
+      "impact": "告警噪音导致真故障被淹没；日志无法聚合检索。",
+      "fix": "error=需人工介入，warning=可自愈异常，info=里程碑，debug=细节；关键事件用结构化字段（extra=）。",
+      "source": "Google SRE Book / Python logging levels"
+    },
+    {
+      "id": "ENG-009",
+      "title": "入口与配置边界不清",
+      "category": "engineering",
+      "severity": "low",
+      "tags": ["entrypoint", "if __name__", "cli"],
+      "triggers": ["if __name__ ==", "def main(", "argparse", "sys.argv", "input("],
+      "pattern": "库模块顶层直接执行副作用（读配置/建连接/跑主流程），import 即触发；命令行解析散在业务函数内。",
+      "impact": "复用即炸、测试即跑真实依赖。",
+      "fix": "顶层零副作用；一切执行收进 main() 且仅 if __name__ 调用；CLI 解析与业务分离。",
+      "source": "Python 打包与导入机制文档"
+    },
+    {
+      "id": "ENG-010",
+      "title": "敏感凭据进入代码/日志/异常",
+      "category": "engineering",
+      "severity": "high",
+      "tags": ["secret", "credential", "leak", "log"],
+      "triggers": ["password=", "token=", "api_key", "secret", "conn_str", "mysql://"],
+      "pattern": "凭据出现在源码、被 format 进日志或随异常栈回显给前端。",
+      "impact": "任何日志/错误页阅读者均可窃取凭据。",
+      "fix": "密钥只来自环境/密钥管理服务；日志与错误响应脱敏；上 gitleaks/pre-commit 扫历史。",
+      "source": "CWE-798 / OWASP A07:2021"
+    }
+  ]
+}
