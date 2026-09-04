@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "name": "代码规范知识库（D9-D11 扩容：style 类目首批）",
+    "version": "0.1",
+    "note": "规范类多为软性规则，交给 LLM 语义判断；severity 普遍 low/medium，勿与缺陷混级。",
+    "maintainer": "team"
+  },
+  "items": [
+    {
+      "id": "STY-001",
+      "title": "命名不符合 PEP8",
+      "category": "style",
+      "severity": "low",
+      "tags": ["naming", "pep8", "convention"],
+      "triggers": ["def Get", "def Do", "MyVar", "Temp1", "data2", "x_ ="],
+      "pattern": "函数/变量用大驼峰或匈牙利式命名，类用 snake_case，常量用小写；单字母名（非循环变量）表意不明。",
+      "impact": "可读性下降，团队协作成本高。",
+      "fix": "函数/变量 snake_case、类 PascalCase、模块级常量 UPPER_SNAKE；命名表达意图。",
+      "source": "https://peps.python.org/pep-0008/#naming-conventions"
+    },
+    {
+      "id": "STY-002",
+      "title": "缺失或无效 docstring",
+      "category": "style",
+      "severity": "low",
+      "tags": ["docstring", "comment", "documentation"],
+      "triggers": ["# type: ignore", "# TODO", "class ", "lambda"],
+      "pattern": "公共函数无 docstring，或 docstring 只是复述函数名（do-nothing 注释）；参数/返回/异常无说明。",
+      "impact": "接口意图不可考，误用率高。",
+      "fix": "公共 API 写 Google/Numpy 风格 docstring：一句话职责 + Args/Returns/Raises；内部实现可省。",
+      "source": "PEP 257"
+    },
+    {
+      "id": "STY-003",
+      "title": "导入混乱或通配导入",
+      "category": "style",
+      "severity": "low",
+      "tags": ["import", "wildcard", "circular"],
+      "triggers": ["from ", " import *", "import sys, os", "# noqa"],
+      "pattern": "星号导入污染命名空间；导入顺序混乱；函数内 import 掩盖循环依赖。",
+      "impact": "名字冲突难排查，循环依赖隐性滋生。",
+      "fix": "禁用 import *；按标准库/三方/本地分组排序（isort）；循环依赖通过重构解耦而不是移动 import。",
+      "source": "PEP 8 #imports"
+    },
+    {
+      "id": "STY-004",
+      "title": "魔法数字/字符串散落",
+      "category": "style",
+      "severity": "low",
+      "tags": ["magic", "constant", "literal"],
+      "triggers": ["== 200", "== 0", "* 60", "> 1000", "range(24)", "3600"],
+      "pattern": "业务含义的字面量直接散在逻辑里（状态码、超时、阈值），多处重复无出处。",
+      "impact": "改值必漏改，语义不可读。",
+      "fix": "提取具名常量或 Enum（TIMEOUT_SECONDS=3600、Status.ACTIVE=200）集中定义。",
+      "source": "PEP8 programming recommendations"
+    },
+    {
+      "id": "STY-005",
+      "title": "过长函数/过深嵌套",
+      "category": "style",
+      "severity": "medium",
+      "tags": ["complexity", "length", "nesting", "refactor"],
+      "triggers": ["else:", "elif ", "try:", "finally:", "while True"],
+      "pattern": "单函数远超 60 行或 if/for/try 嵌套超过 3 层，一个函数承担多个职责。",
+      "impact": "难以测试与推理，改动牵一发动全身。",
+      "fix": "按职责拆分小函数；用卫语句提前 return 拉平嵌套；循环体内逻辑提取为函数。",
+      "source": "Cognitive Complexity / SonarSource 规则"
+    },
+    {
+      "id": "STY-006",
+      "title": "死代码与注释掉的代码块",
+      "category": "style",
+      "severity": "low",
+      "tags": ["dead", "unused", "comment"],
+      "triggers": ["# def ", "# if ", "# import", "unused_", "_ = ", "# print"],
+      "pattern": "大段被注释的旧实现留在文件里；定义了从不使用的变量/函数。",
+      "impact": "误导读者，掩盖真实逻辑；历史应由 git 保管。",
+      "fix": "删除注释掉的代码（需要时从 git 找回）；未用定义直接删或说明保留原因。",
+      "source": "PEP8 / 通用实践"
+    },
+    {
+      "id": "STY-007",
+      "title": "公共接口缺类型标注",
+      "category": "style",
+      "severity": "low",
+      "tags": ["typing", "annotation", "hint"],
+      "triggers": ["-> ", ": str", "List[", "Optional[", "Any", "Dict["],
+      "pattern": "对外暴露的函数签名无参数/返回类型标注，容器类型裸写 list/dict。",
+      "impact": "误用与 mypy 盲区；接口契约只存在于口头。",
+      "fix": "公共函数补齐 annotations，容器用泛型（list[str]、dict[str, int]）；CI 挂 mypy。",
+      "source": "PEP 484"
+    },
+    {
+      "id": "STY-008",
+      "title": "影子变量/作用域遮蔽",
+      "category": "style",
+      "severity": "low",
+      "tags": ["shadow", "scope", "builtin"],
+      "triggers": ["id =", "type =", "list =", "sum =", "input =", "open ="],
+      "pattern": "局部变量命名遮蔽内建（id/type/list/sum/input/open）或外层同名变量。",
+      "impact": "内建能力在该作用域不可用，极难排查。",
+      "fix": "改用业务语义名（record_id、kind、names）；ruff/flake8 builtins 插件（A001-A003）拦截。",
+      "source": "PEP8 / ruff flake8-builtins"
+    },
+    {
+      "id": "STY-009",
+      "title": "字符串拼接构造 SQL/路径/HTML",
+      "category": "style",
+      "severity": "low",
+      "tags": ["concat", "format", "structure"],
+      "triggers": ["+ str(", ".format(", "% (", "f\"SELECT", "os.path.join("],
+      "pattern": "用 +/format 拼装本应由专用 API 处理的结构（SQL→参数绑定、路径→pathlib、HTML→模板）。",
+      "impact": "既埋注入风险（见 CWE-89/78/22），也难以后续审计。",
+      "fix": "分别改用参数化查询、pathlib 运算、模板引擎自动转义。",
+      "source": "规范视角，安全定义见 CWE-89/78/22"
+    },
+    {
+      "id": "STY-010",
+      "title": "f-string/日志混用不当",
+      "category": "style",
+      "severity": "low",
+      "tags": ["logging", "fstring", "lazy"],
+      "triggers": ["logging.info(f\"", "logger.debug(f\"", "print("],
+      "pattern": "logging 调用里用 f-string 预格式化（关闭级别时白白求值），或用 print 当日志。",
+      "impact": "高频路径性能浪费；print 无级别/时间戳/路由。",
+      "fix": "日志用惰性参数：logger.info('x=%s', x)；移除裸 print，统一 logger。",
+      "source": "Python logging docs「Using lazy format arguments」"
+    }
+  ]
+}
