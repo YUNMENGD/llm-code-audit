@@ -81,7 +81,8 @@
       "severity": "medium",
       "source": "CWE-327 https://cwe.mitre.org/data/definitions/327.html",
       "pattern": "hashlib\\.(md5|sha1)\\s*\\(",
-      "why": "MD5/SHA1 已被碰撞攻破，不适合安全用途。",
+      "exclude": ["# nosec"],
+      "why": "MD5/SHA1 已被碰撞攻破，不适合安全用途。（缓存键/校验和等非安全场景同行加 # nosec 豁免）",
       "impact": "口令可被快速彩虹表/碰撞攻击还原。",
       "suggestion": "口令用 bcrypt/argon2；签名用 SHA-256 以上。"
     },

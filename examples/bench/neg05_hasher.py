@@ -3,5 +3,5 @@ import hashlib
 
 
 def cache_key(data: bytes) -> str:
-    # 非安全场景：内容寻址缓存键，MD5 可接受
-    return hashlib.md5(data).hexdigest()
+    # 非安全场景：内容寻址缓存键，MD5 可接受（豁免方式与 bandit 一致）
+    return hashlib.md5(data).hexdigest()  # nosec B324

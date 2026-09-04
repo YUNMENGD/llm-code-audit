@@ -335,4 +335,29 @@ CH.CACHE_FILE = _old_file
 CH._MEM = None
 shutil.rmtree(_tmpdir, ignore_errors=True)
 
+print("\n[12] guards：防护抑制（D19 误报治理）")
+src_g = ("import yaml\n"
+         "with open(p) as f:\n"
+         "    data = yaml.safe_load(f)\n"
+         "x = 1\ny = 2\nz = 3\nw = 4\nv = 5\nu = 6\n"
+         "pickle.loads(other)\n")
+cov = RL.guard_coverage(src_g)
+check("safe_load 防护点被定位", 3 in cov.get("CWE-502", set()))
+g502_near = Issue(rule_id="CWE-502", category=Category.SECURITY, severity=Severity.CRITICAL,
+                  title="yaml", path="a.py", line_start=2, line_end=3, evidence="e",
+                  analysis="a", fix="f", confidence=0.9, detector="llm")
+g502_far = Issue(rule_id="CWE-502", category=Category.SECURITY, severity=Severity.CRITICAL,
+                 title="pickle", path="a.py", line_start=10, evidence="e",
+                 analysis="a", fix="f", confidence=0.9, detector="llm")
+keep, supp = VD.guard_suppress([g502_near, g502_far], {"a.py": cov})
+check("防护点附近告警被抑制", keep == [g502_far] and len(supp) == 1)
+keep2, _ = VD.guard_suppress([g502_near], {"other.py": cov})
+check("跨文件不串位", keep2 == [g502_near])
+st = Issue(rule_id="CWE-502", category=Category.SECURITY, severity=Severity.CRITICAL,
+           title="s", path="a.py", line_start=3, evidence="e", analysis="a", fix="f",
+           detector="static", verified=True)
+keep3, _ = VD.guard_suppress([st], {"a.py": cov})
+check("静态告警不受抑制", keep3 == [st])
+check("真实 guards 可加载", len(RL.load_guards()) >= 7)
+
 print(f"\n全部通过：{PASS} 项 ✓")

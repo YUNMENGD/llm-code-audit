@@ -67,11 +67,15 @@ def audit_path(target: str | Path, depth: str = "file",
         if not any(part in P.IGNORE_DIRS for part in p.parts))
 
     n_files = len(files)
+    guards = RL.load_guards()
+    coverage_by_path: dict[str, dict] = {}
+    suppressed: list[str] = []
     for fi, f in enumerate(files, 1):
         if engine["llm_used"] or n_files > 1:
             print(f"[{fi}/{n_files}] 解析 {f} ...", flush=True)
         file_unit = P.parse_file(f)
         source_lines = file_unit.source.splitlines()
+        coverage_by_path[str(f)] = RL.guard_coverage(file_unit.source, guards)
 
         # ① 静态硬性规则
         issues += RL.scan_source(file_unit.source, static_rules, str(f))
@@ -112,13 +116,16 @@ def audit_path(target: str | Path, depth: str = "file",
     if use_cache:
         C.flush()
 
-    # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → rule_id白名单 → 双模型复核(D15) → 置信度闸门(T2)
+    # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → rule_id白名单 → 防护抑制(guards) → 双模型复核(D15) → 置信度闸门(T2)
     valid_ids = {it["id"] for it in knowledge} | {r["id"] for r in static_rules}
     before = len(issues)
     issues = V.dedupe(issues)
     issues = V.cwe_merge(issues)
     issues = [i for i in issues if not (i.detector == "llm" and not i.verified)]
     issues = V.rule_id_gate(issues, valid_ids)
+    issues, suppressed = V.guard_suppress(issues, coverage_by_path)
+    if suppressed:
+        print(f"[guards] 防护覆盖抑制 {len(suppressed)} 条告警", flush=True)
     agreement = V.cross_review(issues, enabled=do_cross, n_models=len(clients))
     issues = V.confidence_gate(issues)
     filtered = before - len(issues)

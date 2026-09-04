@@ -6,10 +6,10 @@
   },
   "expected": [
     {"file": "pos01_query.py",  "cwe": "CWE-89",  "line": 7},
-    {"file": "pos02_backup.py", "cwe": "CWE-78",  "line": 6},
-    {"file": "pos03_loader.py", "cwe": "CWE-502", "line": 6},
-    {"file": "pos04_files.py",  "cwe": "CWE-22",  "line": 8},
-    {"file": "pos05_users.py",  "cwe": "CWE-327", "line": 6},
+    {"file": "pos02_backup.py", "cwe": "CWE-78",  "line": 7},
+    {"file": "pos03_loader.py", "cwe": "CWE-502", "line": 7},
+    {"file": "pos04_files.py",  "cwe": "CWE-22",  "line": 9},
+    {"file": "pos05_users.py",  "cwe": "CWE-327", "line": 7},
     {"file": "pos06_calc.py",   "cwe": "CWE-95",  "line": 6}
   ],
   "negatives": [

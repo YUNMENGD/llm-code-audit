@@ -81,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         mode = "静态规则" if a.static else "完整审计"
         for n, p in enumerate(res["runs"], 1):
             print(f"[{mode} 第{n}轮] TP={p['tp']} FP={len(p['fp'])} FN={len(p['fn'])} "
+                  f"建议={p['advisory']} "
                   f"P={p['precision']:.3f} R={p['recall']:.3f} F1={p['f1']:.3f}")
             for x in p["fp"]:
                 print(f"    误报: {x}")
