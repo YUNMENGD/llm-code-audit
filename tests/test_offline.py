@@ -430,4 +430,20 @@ check("同触发词非依赖条目不受影响", "LOG-001" in ids_b and "LOG-001
 check("真实库五条依赖型条目已带字段",
       sum(1 for it in RT.load_knowledge() if "require_any_in" in it) >= 5)
 
+print("\n[16] 治E：列级字符串遮蔽（模式E：文案内敏感词）")
+def _hit(src, rid):
+    return any(h.rule_id == rid for h in RL.scan_source(src, rs, "t.py"))
+check("真exec调用保留", _hit("exec(code, self.locals)", "R-SEC-003"))
+check("shell=True报错文案遮蔽", not _hit(
+      'raise RuntimeError("shell=True on UNIX systems")', "R-SEC-008"))
+check("字符串内eval文案遮蔽", not _hit(
+      'msg = "do not use eval( here"', "R-SEC-003"))
+check("硬编码密钥值在字符串仍保留", _hit(
+      'API_SECRET = "sk-live-9f8e7d6c5b4a"', "R-SEC-006"))
+check("is字面量真缺陷保留", _hit("if x is 5:", "R-LOG-003"))
+check("f-string表达式内真exec保留", _hit(
+      'print(f"{eval(code)}")', "R-SEC-003"))
+# tokenize 失败（半截语法）→ spans={} 保守放行，宁可多报不误删
+check("语法错误文件仍保守扫描", _hit("import os\nx = (1,\nexec(y)", "R-SEC-003"))
+
 print(f"\n全部通过：{PASS} 项 ✓")

@@ -145,6 +145,7 @@
 **负样本候选**（>150 行零告警，抽验确认确实干净）：
   exceptions.py, formatting.py, parser.py
 
+<<<<<<< HEAD
 ## kombu（realtest\kombu\t，1 文件有告警 / 1 条）
 
 | 文件 | 行 | 规则 | 标题 | 级别 | 判定 |
@@ -153,6 +154,39 @@
 
 **负样本候选**（>150 行零告警，抽验确认确实干净）：
   common.py, mocks.py, conftest.py
+=======
+## kombu（realtest\kombu\t，16 文件有告警 / 32 条）
+
+| 文件 | 行 | 规则 | 标题 | 级别 | 判定 |
+|---|---|---|---|---|---|
+| test_redis.py | 3391 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_redis.py | 3402 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_redis.py | 3422 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_redis.py | 3433 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_redis.py | 128 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_SQS_SNS.py | 376 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_SQS_SNS.py | 501 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_SQS_SNS.py | 1673 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_SQS_SNS.py | 2046 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_qpid.py | 1427 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_qpid.py | 1474 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_qpid.py | 1509 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_qpid.py | 1513 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_filesystem.py | 47 | R-LOG-001 | 裸 except 吞掉所有异常 | medium | ☐T ☐F ☐? |
+| test_filesystem.py | 206 | R-LOG-001 | 裸 except 吞掉所有异常 | medium | ☐T ☐F ☐? |
+| test_filesystem.py | 301 | R-LOG-001 | 裸 except 吞掉所有异常 | medium | ☐T ☐F ☐? |
+| test_sqs.py | 19 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_sqs.py | 54 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_serialization.py | 268 | R-SEC-004 | pickle 反序列化不可信数据 | high | ☐T ☐F ☐? |
+| test_serialization.py | 269 | R-SEC-004 | pickle 反序列化不可信数据 | high | ☐T ☐F ☐? |
+| test_div.py | 28 | R-SEC-004 | pickle 反序列化不可信数据 | high | ☐T ☐F ☐? |
+| test_div.py | 54 | R-SEC-004 | pickle 反序列化不可信数据 | high | ☐T ☐F ☐? |
+| test_functional.py | 76 | R-SEC-004 | pickle 反序列化不可信数据 | high | ☐T ☐F ☐? |
+| test_functional.py | 159 | R-SEC-004 | pickle 反序列化不可信数据 | high | ☐T ☐F ☐? |
+
+**负样本候选**（>150 行零告警，抽验确认确实干净）：
+  common.py, test_mongodb.py, test_py_amqp.py
+>>>>>>> origin/main
 
 ## alembic（realtest\alembic\alembic，16 文件有告警 / 21 条）
 
@@ -201,10 +235,23 @@
 **负样本候选**（>150 行零告警，抽验确认确实干净）：
   _internal.py, _reloader.py, accept.py
 
+<<<<<<< HEAD
 ## trio（realtest\trio\src\trio，17 文件有告警 / 38 条）
 
 | 文件 | 行 | 规则 | 标题 | 级别 | 判定 |
 |---|---|---|---|---|---|
+=======
+## trio（realtest\trio\src\trio，35 文件有告警 / 77 条）
+
+| 文件 | 行 | 规则 | 标题 | 级别 | 判定 |
+|---|---|---|---|---|---|
+| test_dtls.py | 208 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_dtls.py | 541 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_dtls.py | 653 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_dtls.py | 697 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_dtls.py | 726 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_dtls.py | 757 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+>>>>>>> origin/main
 | _dtls.py | 56 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _dtls.py | 220 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _dtls.py | 421 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
@@ -228,26 +275,48 @@
 | _subprocess.py | 190 | R-ENG-001 | 文件/连接未用 with 管理 | low | ☐T ☐F ☐? |
 | _subprocess.py | 373 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _subprocess.py | 1122 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+<<<<<<< HEAD
 | _io_windows.py | 853 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _io_windows.py | 855 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _io_windows.py | 902 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _channel.py | 626 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _channel.py | 632 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
 | _asyncgens.py | 237 | R-LOG-001 | 裸 except 吞掉所有异常 | medium | ☐T ☐F ☐? |
+=======
+| test_threads.py | 880 | R-SEC-006 | 疑似硬编码密钥/口令 | high | ☐T ☐F ☐? |
+| test_threads.py | 244 | R-LOG-001 | 裸 except 吞掉所有异常 | medium | ☐T ☐F ☐? |
+| test_threads.py | 573 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| test_threads.py | 1140 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| _io_windows.py | 853 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| _io_windows.py | 855 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+| _io_windows.py | 902 | R-ENG-002 | TODO/FIXME 未清理 | low | ☐T ☐F ☐? |
+>>>>>>> origin/main
 
 **负样本候选**（>150 行零告警，抽验确认确实干净）：
   _abc.py, _exceptions.py, _generated_io_kqueue.py
 
 ## 汇总
 
+<<<<<<< HEAD
 - 待复核文件 ≈ **152**，静态告警 **235** 条
 - 规则命中分布（复核重点从高到低）：
   - R-ENG-002: 83
   - R-LOG-001: 32
+=======
+- 待复核文件 ≈ **185**，静态告警 **305** 条
+- 规则命中分布（复核重点从高到低）：
+  - R-ENG-002: 90
+  - R-LOG-001: 35
+  - R-SEC-006: 18
+>>>>>>> origin/main
   - R-SEC-003: 11
   - R-ENG-001: 8
   - R-LOG-003: 7
   - R-SEC-007: 6
+<<<<<<< HEAD
   - R-SEC-006: 3
   - R-SEC-005: 2
+=======
+  - R-SEC-004: 6
+>>>>>>> origin/main
 - 建议首批精标 25~30 文件：告警最密的 top 库各取 2~3 文件 + 等量负样本

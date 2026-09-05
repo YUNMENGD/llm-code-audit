@@ -128,10 +128,47 @@ def _docstring_mask(lines: list[str], source: str = "") -> list[bool]:
     return out
 
 
+def _string_spans(source: str) -> dict[int, list[tuple[int, int]]]:
+    """行号 → 字符串文本 token 覆盖的列区间（模式 E：字符串内的敏感词）。
+
+    收集 STRING 与 FSTRING_MIDDLE（3.12+ f-string 的字面文本段）两类 token——
+    即"人读的文案区"。f-string 表达式 `{...}` 内部是真实代码，不遮蔽，方向保守。
+    多行串逐行展开。tokenize 失败返回 {}（视为无遮蔽，宁可多报不误删）。
+    """
+    import io
+    import tokenize
+    spans: dict[int, list[tuple[int, int]]] = {}
+    text_types = {tokenize.STRING}
+    for name in ("FSTRING_MIDDLE",):
+        t = getattr(tokenize, name, None)
+        if t is not None:
+            text_types.add(t)
+    try:
+        lines = source.splitlines()
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type not in text_types:
+                continue
+            (sr, sc), (er, ec) = tok.start, tok.end
+            if sr == er:
+                spans.setdefault(sr, []).append((sc, ec))
+            else:
+                if 0 < sr <= len(lines):
+                    spans.setdefault(sr, []).append((sc, len(lines[sr - 1])))
+                for r in range(sr + 1, er):
+                    if 0 < r <= len(lines):
+                        spans.setdefault(r, []).append((0, len(lines[r - 1])))
+                if 0 < er <= len(lines):
+                    spans.setdefault(er, []).append((0, ec))
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return {}
+    return spans
+
+
 def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[Issue]:
     """对一段源码跑全部硬性规则，返回命中的 Issue 列表。"""
     lines = source.splitlines()
     doc = _docstring_mask(lines, source)
+    strspans = _string_spans(source)     # 模式E：字符串文案内的敏感词不算命中
     hits: list[Issue] = []
     for r in rules:
         if not r.get("pattern"):
@@ -147,8 +184,11 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
                 continue
             if not match_comment and ln.lstrip().startswith("#"):
                 continue
-            if not rx.search(ln):
+            m = rx.search(ln)
+            if not m:
                 continue
+            if any(a <= m.start() < b for a, b in strspans.get(i + 1, ())):
+                continue                 # 匹配起点在字符串文本内 → 文案非代码
             if any(ex in ln for ex in r.get("exclude", [])):
                 continue
             if r.get("body_check") == "no_reraise" and _block_reraises(lines, i):
