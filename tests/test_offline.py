@@ -470,4 +470,27 @@ check("f-string表达式内真exec保留", _hit(
 # tokenize 失败（半截语法）→ spans={} 保守放行，宁可多报不误删
 check("语法错误文件仍保守扫描", _hit("import os\nx = (1,\nexec(y)", "R-SEC-003"))
 
+print("\n[17] realeval：真实库 precision 评测器")
+from codeaudit import realeval as RE                 # noqa: E402
+check("无 ground truth 库优雅报错", "error" in RE.evaluate("__no_such_lib__"))
+check("click ground truth 可加载", RE.load_gt("click") is not None
+      and len(RE.load_gt("click")["annotations"]) == 18)
+gt_click = RE.load_gt("click")
+# 模式统计：模拟治理后 cur_keys 只剩 core.py:2304(真TODO) + _compat.py:77(A,pass)
+fake_cur = {("core.py", 2304, "R-ENG-002"), ("_compat.py", 77, "R-LOG-001")}
+removed = RE._removed_by_pattern(gt_click, fake_cur)
+check("模式统计只数被消除的F", sum(removed.values()) == 16)
+check("F1探测误报被计入消除", removed.get("F1", 0) >= 8)
+check("真TODO未被消除(不在removed)", removed.get("TODO", 0) == 0)
+check("werkzeug ground truth 可加载", len(RE.load_gt("werkzeug")["annotations"]) == 22)
+
+print("\n[18] NAME：eval/exec 方法名撞车豁免（R-SEC-003 收紧）")
+check("真exec调用仍报", _hit("exec(code, self.locals)", "R-SEC-003"))
+check("缩进真exec仍报", _hit("    exec(code, globs, locs)", "R-SEC-003"))
+check("真eval调用仍报", _hit("eval(input())", "R-SEC-003"))
+check("self.eval方法调用豁免", not _hit("return self.console.eval(code)", "R-SEC-003"))
+check("frame.eval方法调用豁免", not _hit("frame.eval(command)", "R-SEC-003"))
+check("def eval定义豁免", not _hit("def eval(self, code):", "R-SEC-003"))
+check("my_exec不误撞", not _hit("my_exec(x)", "R-SEC-003"))
+
 print(f"\n全部通过：{PASS} 项 ✓")
