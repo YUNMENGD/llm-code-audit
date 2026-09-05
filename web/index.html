@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大模型代码审计系统</title>
+<style>
+  :root { --bg:#0f1420; --card:#171e2e; --line:#242e45; --txt:#e6ebf5; --dim:#8b96ad; --accent:#4f8cff; --ok:#2ecc8f; --warn:#f5a623; --err:#ff5c5c; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--txt); font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif; }
+  header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:16px; font-weight:600; }
+  header .env { margin-left:auto; font-size:12px; color:var(--dim); display:flex; gap:14px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--err); }
+  main { display:grid; grid-template-columns:340px 1fr; gap:16px; padding:16px 22px; height:calc(100vh - 53px); }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; overflow:auto; }
+  .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:10px; }
+  label { display:block; margin:10px 0 4px; font-size:12px; color:var(--dim); }
+  input[type=text] { width:100%; padding:8px 10px; background:#0c1120; border:1px solid var(--line); border-radius:6px; color:var(--txt); font-size:13px; }
+  .segs { display:flex; gap:6px; margin-top:6px; }
+  .segs button { flex:1; padding:7px 0; background:#0c1120; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
+  .segs button.sel { border-color:var(--accent); color:#fff; background:#16233d; }
+  #run { width:100%; margin-top:16px; padding:10px; background:var(--accent); color:#fff; border:0; border-radius:8px; font-size:14px; cursor:pointer; }
+  #run:disabled { opacity:.5; cursor:default; }
+  #log { margin-top:14px; background:#0c1120; border:1px solid var(--line); border-radius:8px; padding:10px; font:11px/1.7 Consolas,monospace; color:#9db4e6; height:180px; overflow:auto; white-space:pre-wrap; }
+  #out { position:relative; }
+  #empty { color:var(--dim); text-align:center; margin-top:30vh; }
+  iframe { width:100%; height:100%; border:0; background:#fff; border-radius:8px; }
+  .tabs { display:flex; gap:8px; margin-bottom:10px; }
+  .tabs button { padding:5px 14px; background:transparent; border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
+  .tabs button.sel { border-color:var(--accent); color:#fff; }
+  #stats { display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:#0c1120; border:1px solid var(--line); }
+  .chip b { color:#fff; }
+  #errbox { display:none; background:#2a1620; border:1px solid #5c2438; color:#ffb4b4; padding:10px 12px; border-radius:8px; margin-bottom:10px; font-size:13px; }
+  #md { display:none; background:#0c1120; padding:14px; border-radius:8px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; height:calc(100vh - 220px); overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡 基于大语言模型的代码审计系统</h1>
+  <div class="env">
+    <span id="env-llm"><span class="dot off"></span>模型未就绪</span>
+    <span id="env-kb">知识库 …</span>
+    <span id="env-rs">规则 …</span>
+  </div>
+</header>
+<main>
+  <section class="panel">
+    <h2>审计配置</h2>
+    <label>目标路径（.py 文件或文件夹）</label>
+    <input type="text" id="target" placeholder="D:\code\myproject 或 xx.py">
+    <label>模式</label>
+    <div class="segs" id="modes">
+      <button data-v="static" class="sel">静态检查（免费）</button>
+      <button data-v="ai">AI 深度审计</button>
+    </div>
+    <label>粒度（AI 模式生效）</label>
+    <div class="segs" id="depths">
+      <button data-v="file" class="sel">文件级</button>
+      <button data-v="function">函数级</button>
+      <button data-v="project">工程级</button>
+    </div>
+    <button id="run">开始审计</button>
+    <pre id="log">等待任务…</pre>
+  </section>
+  <section class="panel" id="out">
+    <div id="empty">左侧填入路径，开始第一次审计<br><small>拖一个 .py 文件到本窗口也可以</small></div>
+    <div id="errbox"></div>
+    <div id="stats" style="display:none"></div>
+    <div class="tabs" id="tabs" style="display:none">
+      <button class="sel" data-t="html">报告视图</button>
+      <button data-t="md">Markdown 原文</button>
+    </div>
+    <iframe id="frame" style="display:none;height:calc(100vh - 220px)"></iframe>
+    <div id="md"></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let mode = "static", depth = "file", polling = null, last = null;
+
+function seg(el, cb) {
+  el.querySelectorAll("button").forEach(b => b.onclick = () => {
+    el.querySelectorAll("button").forEach(x => x.classList.remove("sel"));
+    b.classList.add("sel"); cb(b.dataset.v);
+  });
+}
+seg($("#modes"), v => mode = v);
+seg($("#depths"), v => depth = v);
+seg($("#tabs"), v => {
+  $("#frame").style.display = v === "html" ? "block" : "none";
+  $("#md").style.display = v === "md" ? "block" : "none";
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.t === v));
+});
+
+fetch("/api/check").then(r => r.json()).then(c => {
+  $("#env-llm").innerHTML = `<span class="dot ${c.llm_ready?"on":"off"}"></span>${c.llm_ready ? c.model : "模型未配置"}`;
+  $("#env-kb").textContent = `知识库 ${c.knowledge} 条`;
+  $("#env-rs").textContent = `规则 ${c.rules} 条`;
+});
+
+function logLine(t) {
+  const el = $("#log");
+  el.textContent += "\n" + t;
+  el.scrollTop = el.scrollHeight;
+}
+
+$("#run").onclick = async () => {
+  const target = $("#target").value.trim();
+  if (!target) { alert("请填入路径"); return; }
+  $("#run").disabled = true; $("#empty").style.display = "none";
+  $("#errbox").style.display = "none"; $("#log").textContent = "启动任务…";
+  const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({target, mode, depth})});
+  const j = await r.json();
+  if (!r.ok) { fail(j.detail || "启动失败"); return; }
+  poll(j.job_id);
+};
+
+function poll(id) {
+  clearInterval(polling);
+  polling = setInterval(async () => {
+    const s = await (await fetch(`/api/job/${id}`)).json();
+    if (s.progress && s.progress.length) {
+      const joined = s.progress.join("\n");
+      if (joined !== last) { last = joined; $("#log").textContent = s.progress.slice(-14).join("\n"); }
+    }
+    if (s.status === "done") { clearInterval(polling); render(id); }
+    else if (s.status === "error") { clearInterval(polling); fail(s.error); }
+  }, 1200);
+}
+
+async function render(id) {
+  const d = await (await fetch(`/api/result/${id}`)).json();
+  $("#frame").srcdoc = d.html;
+  $("#md").textContent = d.markdown;
+  const st = d.stats || {}, sv = st.by_severity || {};
+  $("#stats").style.display = "flex"; $("#tabs").style.display = "flex";
+  $("#frame").style.display = "block";
+  $("#stats").innerHTML =
+    `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
+    `<span class="chip" style="color:#ff8080">严重 <b>${sv["严重"]||sv.critical||0}</b></span>` +
+    `<span class="chip" style="color:#f5a623">高危 <b>${sv["高危"]||sv.high||0}</b></span>` +
+    `<span class="chip" style="color:#9db4e6">中低危 <b>${(sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0)}</b></span>` +
+    `<span class="chip">引擎 ${d.engine.model || "?"} · ${d.engine.seconds || 0}s${d.engine.llm_used ? " · 已走AI" : " · 纯静态"}</span>`;
+  $("#run").disabled = false;
+}
+
+function fail(msg) {
+  $("#errbox").textContent = "⚠ " + msg; $("#errbox").style.display = "block";
+  $("#run").disabled = false;
+}
+
+// 拖文件进窗口 → 填路径（pywebview 下 dataTransfer 可取到真实路径；浏览器下取文件名做提示）
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", async e => {
+  e.preventDefault();
+  let p = "";
+  try { p = e.dataTransfer.files[0]?.path || (e.dataTransfer.files[0]?.webkitRelativePath || ""); } catch (_) {}
+  if (!p && window.pywebview) p = await window.pywebview.api.drop_path ? window.pywebview.api.drop_path() : "";
+  if (p) { $("#target").value = p; logLine("已填入拖入路径"); }
+});
+</script>
+</body>
+</html>

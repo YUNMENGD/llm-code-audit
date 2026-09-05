@@ -42,7 +42,15 @@ python -m codeaudit audit examples/vulnerable_app.py -o out/report.md
 
 # 运行离线测试
 python tests/test_offline.py
+
+# 桌面应用形态（独立窗口，拖路径即审）
+python desktop.py
 ```
+
+### 桌面应用（F 项）
+
+`python desktop.py` 启动独立窗口：静态检查模式全程免费，AI 深度审计读取 `.env` 配置。
+pywebview 装不上时自动退化为浏览器模式（同一服务、功能一致）。仅监听 127.0.0.1，不对外网开放。
 
 ### 配置密钥
 
