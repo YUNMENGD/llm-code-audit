@@ -30,9 +30,9 @@
   #status .spin { display:inline-block; animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
   #log { margin-top:8px; background:#fafcff; border:1px solid var(--line); border-radius:6px; padding:10px; font:11px/1.7 Consolas,monospace; color:#5a7396; height:calc(100% - 360px); min-height:120px; overflow:auto; white-space:pre-wrap; }
-  #out { position:relative; display:flex; flex-direction:column; }
+  #out { position:relative; }
   #empty { color:var(--dim); text-align:center; margin-top:30vh; }
-  iframe { flex:1; width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  #frame { width:100%; height:calc(100vh - 210px); border:1px solid var(--line); border-radius:6px; background:#fff; }
   .tabs { display:flex; gap:8px; margin-bottom:8px; }
   .tabs button { padding:5px 14px; background:#fff; border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
   .tabs button.sel { border-color:var(--accent); color:var(--accent); }
@@ -40,7 +40,7 @@
   .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:#eef5fd; border:1px solid var(--line); }
   .chip b { color:var(--txt); }
   #errbox { display:none; background:#fdf0f0; border:1px solid #f2c8c8; color:#b04a4a; padding:10px 12px; border-radius:6px; margin-bottom:10px; font-size:13px; }
-  #md { flex:1; display:none; background:#fbfdff; border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; overflow:auto; }
+  #md { display:none; height:calc(100vh - 210px); background:#fbfdff; border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; overflow:auto; }
 </style>
 </head>
 <body>
@@ -101,11 +101,21 @@ function seg(el, cb) {
 seg($("#modes"), v => mode = v);
 seg($("#depths"), v => depth = v);
 seg($("#tabs"), v => {
-  $("#frame").style.display = v === "html" ? "block" : "none";
-  $("#md").style.display = v === "md" ? "block" : "none";
+  const showFrame = v === "html";
+  $("#frame").style.setProperty("display", showFrame ? "block" : "none", "important");
+  $("#md").style.setProperty("display", showFrame ? "none" : "block", "important");
 });
 
-// 原生文件选择（拖拽在 webview 里常拿不到真实路径，改用对话框）
+// 拖拽：阻止 webview 默认的"打开文件"导航；能拿到真实路径就填入，
+// 拿不到（浏览器出于安全不提供 path）则提示改用选择按钮。
+window.addEventListener("dragover", e => { e.preventDefault(); e.stopPropagation(); });
+window.addEventListener("drop", e => {
+  e.preventDefault(); e.stopPropagation();
+  let p = "";
+  try { p = e.dataTransfer && e.dataTransfer.files[0] ? (e.dataTransfer.files[0].path || "") : ""; } catch (_) {}
+  if (p) { $("#target").value = p; $("#status").textContent = "已从拖入文件填入路径"; }
+  else { $("#status").textContent = "拖拽无法获取路径，请用「选择文件 / 选择文件夹」按钮"; }
+});
 async function pick(kind) {
   try {
     const r = await (await fetch(`/api/pick?kind=${kind}`)).json();
@@ -163,7 +173,8 @@ async function render(id) {
   const midlow = (sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0);
   $("#status").textContent = "✔ 完成";
   $("#stats").style.display = "flex"; $("#tabs").style.display = "flex";
-  $("#frame").style.display = "block"; $("#md").style.display = "none";
+  $("#frame").style.setProperty("display", "block", "important");
+  $("#md").style.setProperty("display", "none", "important");
   document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.t === "html"));
   $("#stats").innerHTML =
     `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
