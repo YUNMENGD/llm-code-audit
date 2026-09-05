@@ -50,7 +50,9 @@ def scan(pkg: Path):
     sev_rank = {Severity.CRITICAL: 3, Severity.HIGH: 2,
                 Severity.MEDIUM: 1, Severity.LOW: 0}
     for f in sorted(pkg.rglob("*.py")):
-        if EXCLUDE_PARTS & {p.lower() for p in f.parts}:
+        parts = {p.lower() for p in f.resolve().parts}
+        if (EXCLUDE_PARTS | {"_tests", "testing"}) & parts \
+                or f.name.startswith(("test_", "tests_")):
             continue
         try:
             src = f.read_text(encoding="utf-8", errors="replace")
