@@ -105,7 +105,8 @@
       "source": "PEP8 / CWE-390",
       "pattern": "\\bexcept\\s*(:|Exception\\s*:|BaseException\\s*:)",
       "body_check": "no_reraise",
-      "why": "捕获过宽或裸 except 会吞掉 KeyboardInterrupt/SystemExit 等，异常传播被中断。块体内清理后 raise 重抛的防御模式不报（body_check=no_reraise）。",
+      "probe_check": "except_probe",
+      "why": "捕获过宽或裸 except 会吞掉 KeyboardInterrupt/SystemExit 等，异常传播被中断。块体内清理后 raise 重抛（no_reraise）、显式 except Exception 做能力探测降级返回（except_probe）不报；裸 except/BaseException 静默吞仍属目标缺陷，确属故意的请 # noqa。",
       "impact": "故障不可见，问题扩散到下游才暴露，排障成本极高。",
       "suggestion": "只捕获预期的具体异常类型；无法处理就记录日志后 raise。"
     },
@@ -138,7 +139,8 @@
       "severity": "low",
       "source": "CWE-404 / PEP8",
       "pattern": "=\\s*(open|sqlite3\\.connect|requests\\.(get|post))\\s*\\(",
-      "why": "异常路径下资源不会被释放。",
+      "resource_check": "managed",
+      "why": "异常路径下资源不会被释放。（同变量在下方 finally/清理路径出现 .close() 的接管模式不报；确属故意的请 # noqa）",
       "impact": "句柄泄漏、数据未刷盘。",
       "suggestion": "使用 with 上下文管理器。"
     },
