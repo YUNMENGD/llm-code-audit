@@ -52,12 +52,20 @@ def _kw_score(query_lower: str, qwords: set, it: dict) -> float:
 
 
 def _vetoed(it: dict, query_lower: str) -> bool:
-    """适用边界硬否决（治 A）：not_when 命中说明本单元是该 API 的定义者
-    （框架/库源码本身），该 CWE 对它不适用。如 flask templating.py 含
-    `def render_template_string` → 对 CWE-94 是越界，直接剔除而非降权
-    （实测 soft 扣分打不过多 trigger 加分）。调用方 `render_template_string(tpl)`
-    不含 `def ` 前缀，不会被误伤，真攻击面照常命中。"""
-    return any(p.lower() in query_lower for p in it.get("not_when", []))
+    """适用边界硬否决（治 A/C）：
+
+    - not_when 命中 → 本单元是该 API 的定义者（框架/库源码本身），该 CWE
+      对它不适用。如 flask templating.py 含 `def render_template_string`
+      → 对 CWE-94 越界，直接剔除而非降权（实测 soft 扣分打不过多 trigger 加分）。
+    - require_any_in 非空且全部未命中 → 判定所需的外部输入证据在本单元不存在
+      （IDOR/SSRF/CSRF 类漏洞的前提是「有外部输入」），剔除该弹药（治 C）。
+    调用方代码不含 `def ` 前缀、web 文件含 request，两种场景均不会被误伤。"""
+    if any(p.lower() in query_lower for p in it.get("not_when", [])):
+        return True
+    req = it.get("require_any_in")
+    if req and not any(p.lower() in query_lower for p in req):
+        return True
+    return False
 
 
 def _embed_text(it: dict) -> str:

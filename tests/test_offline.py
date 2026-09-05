@@ -411,4 +411,23 @@ check("无关条目不被连坐否决", "CWE-89" in ids_impl and "CWE-89" in ids
 check("真实库 CWE-94 已带 not_when",
       any("not_when" in it and it["id"] == "CWE-94" for it in RT.load_knowledge()))
 
+print("\n[15] 治C：require_any_in 外部输入证据否决")
+fake_c = [
+    {"id": "CWE-639", "title": "IDOR", "category": "security", "severity": "high",
+     "triggers": ["user_id"], "tags": ["idor"],
+     "require_any_in": ["request", "session", "current_user"]},
+    {"id": "LOG-001", "title": "边界", "category": "logic", "severity": "high",
+     "triggers": ["user_id"], "tags": ["boundary"]},
+]
+batch = "def sync(cursor):\n    user_id = cursor.fetchone()\n    handle(user_id)\n"
+web_h = ("@app.route('/o')\ndef h(request):\n"
+         "    return get(user_id=request.args['id'])\n")
+ids_b = {h["id"] for h in RT.retrieve(batch, items=fake_c, scope=batch)}
+ids_w = {h["id"] for h in RT.retrieve(web_h, items=fake_c, scope=web_h)}
+check("无外部输入模块否决IDOR", "CWE-639" not in ids_b)
+check("web handler保留IDOR弹药", "CWE-639" in ids_w)
+check("同触发词非依赖条目不受影响", "LOG-001" in ids_b and "LOG-001" in ids_w)
+check("真实库五条依赖型条目已带字段",
+      sum(1 for it in RT.load_knowledge() if "require_any_in" in it) >= 5)
+
 print(f"\n全部通过：{PASS} 项 ✓")

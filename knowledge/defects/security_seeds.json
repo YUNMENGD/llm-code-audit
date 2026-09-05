@@ -122,6 +122,7 @@
       "tags": ["ssrf", "url", "fetch", "webhook"],
       "triggers": ["requests.get", "urlopen", "URLInput", "webhook"],
       "pattern": "服务端用用户提供的 URL 发起请求，可指向内网地址/元数据端点。",
+      "require_any_in": ["request", "args[", "form[", "json(", "argv", "environ", "url_for", "payload"],
       "impact": "探测内网、读取云元数据获取临时凭据。",
       "fix": "URL 白名单域名校验；解析后 IP 禁止回环/私网段；禁用重定向或逐跳校验。",
       "source": "https://cwe.mitre.org/data/definitions/918.html ; OWASP A10:2021"
@@ -134,6 +135,7 @@
       "tags": ["upload", "file", "extension"],
       "triggers": ["upload", "filename", ".save(", "content_type"],
       "pattern": "上传仅看扩展名/Content-Type，未校验真实类型，未隔离存储目录。",
+      "require_any_in": ["request", "file[", "files[", "upload", "multipart", "save("],
       "impact": "上传 webshell 获得代码执行；超大文件耗尽存储。",
       "fix": "magic number 校验真实类型；扩展名白名单；随机化文件名；存储于不可执行目录。",
       "source": "https://cwe.mitre.org/data/definitions/434.html"
@@ -146,6 +148,7 @@
       "tags": ["auth", "permission", "idor", "access"],
       "triggers": ["user_id", "order_id", "current_user", "decorator"],
       "pattern": "接口按资源 ID 直接返回数据，未校验该资源属于当前用户（IDOR）。",
+      "require_any_in": ["request", "session", "current_user", "login", "token", "g.user"],
       "impact": "改一个 ID 即可遍历他人全部数据。",
       "fix": "每处数据访问绑定所有权过滤（WHERE owner_id = current_user.id）；统一权限装饰器。",
       "source": "https://cwe.mitre.org/data/definitions/862.html ; OWASP A01:2021"
@@ -182,6 +185,7 @@
       "tags": ["csrf", "form", "state-changing", "session"],
       "triggers": ["POST", "form", "session", "cookie", "state"],
       "pattern": "修改状态的接口仅凭 Cookie 会话鉴权，无 CSRF token / SameSite 防护。",
+      "require_any_in": ["request", "session", "cookie", "form", "route", "app."],
       "impact": "诱导已登录用户访问恶意页面即代为执行操作。",
       "fix": "同步器 token 模式；Cookie 设 SameSite=Lax/Strict；对 JSON 接口校验自定义头。",
       "source": "https://cwe.mitre.org/data/definitions/352.html"
