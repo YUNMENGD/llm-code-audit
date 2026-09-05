@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "lib": "click",
+    "source": "https://github.com/pallets/click",
+    "clone": "git clone --depth 1 https://github.com/pallets/click.git",
+    "pkg_subpath": "src/click",
+    "annotated_at": "2026-09-05",
+    "baseline": "治理前（未含 F1探测/E字符串遮蔽/noqa 三项豁免）静态扫描的 18 条告警，逐处读源码上下文人工核验",
+    "verdict_legend": "T=真缺陷 / F=误报 / ?=可辩护存疑（不计入 precision 分子分母的确定项，单列）",
+    "pattern_legend": "A=设计特性 B=护栏失明 C=输入源误判 D=文档残留 E=字符串内敏感词 F1=探测惯用法 F2=缓存降级 RES=finally资源接管 TODO=真实低价值",
+    "note": "库文件不入库（体积+许可），复现者按 clone 字段自行下载到 realtest/ 后跑 real-eval"
+  },
+  "annotations": [
+    {"file": "_compat.py", "line": 77, "rule": "R-LOG-001", "verdict": "F", "pattern": "A", "note": "__del__ 内 detach 失败 pass，析构清理惯例"},
+    {"file": "_compat.py", "line": 124, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "readable 探测：read(0) 失败 return False"},
+    {"file": "_compat.py", "line": 136, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "writable 探测（嵌套 try）"},
+    {"file": "_compat.py", "line": 139, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "writable 探测内层（嵌套 try）"},
+    {"file": "_compat.py", "line": 149, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "seekable 探测：seek 失败 return False"},
+    {"file": "_compat.py", "line": 157, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "_is_binary_reader 探测 return default"},
+    {"file": "_compat.py", "line": 166, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "_is_binary_writer 探测（嵌套 try）"},
+    {"file": "_compat.py", "line": 170, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "_is_binary_writer 内层探测（嵌套 try）"},
+    {"file": "_compat.py", "line": 543, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "isatty 探测 return False"},
+    {"file": "_compat.py", "line": 561, "rule": "R-LOG-001", "verdict": "F", "pattern": "F2", "note": "缓存 get 失败降级 rv=None"},
+    {"file": "_compat.py", "line": 568, "rule": "R-LOG-001", "verdict": "F", "pattern": "F2", "note": "缓存 set 失败 pass，不影响正确性"},
+    {"file": "_winconsole.py", "line": 209, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "flush 失败继续 buffer.write，有兜底"},
+    {"file": "testing.py", "line": 571, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "del os.environ[key] 失败 pass，键可能不存在"},
+    {"file": "testing.py", "line": 581, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "finally 里 del environ 失败 pass"},
+    {"file": "utils.py", "line": 45, "rule": "R-LOG-001", "verdict": "F", "pattern": "A", "note": "_safecall docstring 自述 swallows exceptions，公开设计"},
+    {"file": "_termui_impl.py", "line": 817, "rule": "R-ENG-001", "verdict": "F", "pattern": "RES", "note": "null=open(/dev/null)，finally: null.close()"},
+    {"file": "_termui_impl.py", "line": 943, "rule": "R-ENG-001", "verdict": "F", "pattern": "RES", "note": "f=open(/dev/tty)，生成器 finally: f.close()"},
+    {"file": "core.py", "line": 2304, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 XXX 滞留注释，低价值但属实"}
+  ]
+}

@@ -55,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--runs", type=int, default=1,
                     help="多轮评测（配合 D17 缓存，追加轮近似免费）")
     ev.add_argument("--cross-review", dest="cross", action="store_true", default=None)
+    rev = sub.add_parser("real-eval",
+                         help="真实开源库基准：只测 precision（需 realtest/ 已下载）")
+    rev.add_argument("libs", nargs="*", default=[],
+                     help="库名（realtest/ 下目录名，如 click）；留空则评测 bench-real/ 全部")
     sub.add_parser("selfcheck", help="环境自检")
 
     a = ap.parse_args(argv)
@@ -91,6 +95,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"均值: P={avg['precision']:.3f} R={avg['recall']:.3f} "
               f"F1={avg['f1']:.3f} | 多轮稳定={res['stable_across_runs']}")
         return 0 if avg["precision"] >= 0.8 and avg["recall"] >= 0.8 else 1
+
+    if a.cmd == "real-eval":
+        from .realeval import main as real_main
+        return real_main(a.libs)
 
     if a.cmd == "check":
         from .report import render_markdown
