@@ -62,6 +62,30 @@ def load_rules() -> list[dict]:
     return rules
 
 
+def _block_reraises(lines: list[str], idx: int) -> bool:
+    """except 行（下标 idx）所属块体内是否重抛。
+
+    对齐 bandit try_except_pass 语义：`except BaseException: cleanup(); raise`
+    是资源清理+重抛的防御模式，不属于"吞异常"。判定：同行体内有 raise，
+    或向下扫描同缩进块体的首个非注释语句即 raise。
+    """
+    row = lines[idx]
+    colon = row.find(":")
+    if colon >= 0 and re.search(r"\braise\b", row[colon + 1:]):
+        return True
+    base = len(row) - len(row.lstrip())
+    for j in range(idx + 1, min(len(lines), idx + 40)):
+        body = lines[j]
+        if not body.strip() or body.lstrip().startswith("#"):
+            continue
+        indent = len(body) - len(body.lstrip())
+        if indent <= base:
+            break
+        if re.match(r"raise(\s|$|from\b|,)", body.strip()):
+            return True
+    return False
+
+
 def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[Issue]:
     """对一段源码跑全部硬性规则，返回命中的 Issue 列表。"""
     lines = source.splitlines()
@@ -77,6 +101,8 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
             if not rx.search(ln):
                 continue
             if any(ex in ln for ex in r.get("exclude", [])):
+                continue
+            if r.get("body_check") == "no_reraise" and _block_reraises(lines, i):
                 continue
             hits.append(Issue(
                 rule_id=r["id"],
