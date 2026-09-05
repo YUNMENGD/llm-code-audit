@@ -5,36 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>大模型代码审计系统</title>
 <style>
-  :root { --bg:#0f1420; --card:#171e2e; --line:#242e45; --txt:#e6ebf5; --dim:#8b96ad; --accent:#4f8cff; --ok:#2ecc8f; --warn:#f5a623; --err:#ff5c5c; }
+  :root { --bg:#f5f8fd; --card:#ffffff; --line:#dce8f7; --txt:#2b3a52; --dim:#8496b0; --accent:#4a90e2; --ok:#2fbf8f; --err:#e05c5c; }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--txt); font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif; }
-  header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
-  header h1 { font-size:16px; font-weight:600; }
+  header { padding:12px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:15px; font-weight:600; }
   header .env { margin-left:auto; font-size:12px; color:var(--dim); display:flex; gap:14px; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
-  .dot.on { background:var(--ok); } .dot.off { background:var(--err); }
-  main { display:grid; grid-template-columns:340px 1fr; gap:16px; padding:16px 22px; height:calc(100vh - 53px); }
-  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; overflow:auto; }
-  .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:10px; }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--dim); }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:14px 20px; height:calc(100vh - 48px); }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; overflow:auto; }
+  .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:8px; }
   label { display:block; margin:10px 0 4px; font-size:12px; color:var(--dim); }
-  input[type=text] { width:100%; padding:8px 10px; background:#0c1120; border:1px solid var(--line); border-radius:6px; color:var(--txt); font-size:13px; }
+  input[type=text] { width:100%; padding:8px 10px; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--txt); font-size:13px; }
   .segs { display:flex; gap:6px; margin-top:6px; }
-  .segs button { flex:1; padding:7px 0; background:#0c1120; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
-  .segs button.sel { border-color:var(--accent); color:#fff; background:#16233d; }
-  #run { width:100%; margin-top:16px; padding:10px; background:var(--accent); color:#fff; border:0; border-radius:8px; font-size:14px; cursor:pointer; }
+  .segs button { flex:1; padding:7px 0; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
+  .segs button.sel { border-color:var(--accent); color:var(--accent); background:#eef5fd; }
+  #run { width:100%; margin-top:14px; padding:10px; background:var(--accent); color:#fff; border:0; border-radius:6px; font-size:14px; cursor:pointer; }
   #run:disabled { opacity:.5; cursor:default; }
-  #log { margin-top:14px; background:#0c1120; border:1px solid var(--line); border-radius:8px; padding:10px; font:11px/1.7 Consolas,monospace; color:#9db4e6; height:180px; overflow:auto; white-space:pre-wrap; }
+  #log { margin-top:12px; background:#fafcff; border:1px solid var(--line); border-radius:6px; padding:10px; font:11px/1.7 Consolas,monospace; color:#5a7396; height:36%; overflow:auto; white-space:pre-wrap; }
   #out { position:relative; }
   #empty { color:var(--dim); text-align:center; margin-top:30vh; }
-  iframe { width:100%; height:100%; border:0; background:#fff; border-radius:8px; }
-  .tabs { display:flex; gap:8px; margin-bottom:10px; }
-  .tabs button { padding:5px 14px; background:transparent; border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
-  .tabs button.sel { border-color:var(--accent); color:#fff; }
-  #stats { display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
-  .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:#0c1120; border:1px solid var(--line); }
-  .chip b { color:#fff; }
-  #errbox { display:none; background:#2a1620; border:1px solid #5c2438; color:#ffb4b4; padding:10px 12px; border-radius:8px; margin-bottom:10px; font-size:13px; }
-  #md { display:none; background:#0c1120; padding:14px; border-radius:8px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; height:calc(100vh - 220px); overflow:auto; }
+  iframe { width:100%; height:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  .tabs { display:flex; gap:8px; margin-bottom:8px; }
+  .tabs button { padding:5px 14px; background:#fff; border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
+  .tabs button.sel { border-color:var(--accent); color:var(--accent); }
+  #stats { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:#eef5fd; border:1px solid var(--line); }
+  .chip b { color:var(--txt); }
+  #errbox { display:none; background:#fdf0f0; border:1px solid #f2c8c8; color:#b04a4a; padding:10px 12px; border-radius:6px; margin-bottom:10px; font-size:13px; }
+  #md { display:none; background:#fbfdff; border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; height:calc(100vh - 200px); overflow:auto; }
 </style>
 </head>
 <body>
@@ -73,7 +73,7 @@
       <button class="sel" data-t="html">报告视图</button>
       <button data-t="md">Markdown 原文</button>
     </div>
-    <iframe id="frame" style="display:none;height:calc(100vh - 220px)"></iframe>
+    <iframe id="frame" style="display:none;height:calc(100vh - 200px)"></iframe>
     <div id="md"></div>
   </section>
 </main>
@@ -141,9 +141,9 @@ async function render(id) {
   $("#frame").style.display = "block";
   $("#stats").innerHTML =
     `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
-    `<span class="chip" style="color:#ff8080">严重 <b>${sv["严重"]||sv.critical||0}</b></span>` +
-    `<span class="chip" style="color:#f5a623">高危 <b>${sv["高危"]||sv.high||0}</b></span>` +
-    `<span class="chip" style="color:#9db4e6">中低危 <b>${(sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0)}</b></span>` +
+    `<span class="chip" style="color:#d05c5c">严重 <b>${sv["严重"]||sv.critical||0}</b></span>` +
+    `<span class="chip" style="color:#c07a1d">高危 <b>${sv["高危"]||sv.high||0}</b></span>` +
+    `<span class="chip" style="color:#5a7396">中低危 <b>${(sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0)}</b></span>` +
     `<span class="chip">引擎 ${d.engine.model || "?"} · ${d.engine.seconds || 0}s${d.engine.llm_used ? " · 已走AI" : " · 纯静态"}</span>`;
   $("#run").disabled = false;
 }
