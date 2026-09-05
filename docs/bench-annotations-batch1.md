@@ -46,6 +46,11 @@
 1. [x] 模式 E 列级字符串遮蔽（分支 fix/treat-e-string-mask：tokenize STRING+FSTRING_MIDDLE
    文本段，f-string 表达式区不遮，tokenize 失败保守放行；六库重扫 R-LOG-003 32→1、
    R-SEC-008 8→0，werkzeug 真 exec×8 全保留；121 测试全绿）
-2. [ ] hard_rules exclude 扩展支持 `# noqa` 通用豁免
+2. [x] 通用抑制标记豁免 `_SUPPRESS_RX`（#noqa/#nosec/#pylint: disable 行级豁免；
+   刻意不含 `type: ignore`——类型标记不表达安全语义。trio:190 noqa 活样本清零；124 测试全绿）
 3. [x] EXCLUDE_PARTS 增加 `_tests`/`testing` 目录与 `test_` 文件前缀（采样器，本次已修：全库统计 185→152 文件、305→235 告警）
-4. [ ] 每完成一项 → 重跑本批 59 条对照，FP 数下降即为量化收益（缓存使重跑零成本）
+4. [x] 重跑本批对照（须在含治E修复的分支上跑，本标注分支未含修复时重扫得 59→59 假象）：
+   - werkzeug 21 → **21**：真 exec×8、except×8 等全保留 = **遮蔽零误伤**（安全性核心证据）
+   - trio 38 → **34**：−3（R-LOG-003 文档 f-string 文案）−1（noqa SIM115）
+   - 六库合计 106 → 102；被消掉的 4 条恰为本文件人工判 F 的告警，无一 T/? 被吞——
+     治理方向正确性由标注数据背书
