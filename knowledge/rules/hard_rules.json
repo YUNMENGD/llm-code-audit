@@ -104,7 +104,8 @@
       "severity": "medium",
       "source": "PEP8 / CWE-390",
       "pattern": "except\\s*(:|Exception\\s*:|BaseException\\s*:)",
-      "why": "捕获全部异常且不处理（或仅 pass），真实错误被静默掩盖。",
+      "body_check": "no_reraise",
+      "why": "捕获过宽或裸 except 会吞掉 KeyboardInterrupt/SystemExit 等，异常传播被中断。块体内清理后 raise 重抛的防御模式不报（body_check=no_reraise）。",
       "impact": "故障不可见，问题扩散到下游才暴露，排障成本极高。",
       "suggestion": "只捕获预期的具体异常类型；无法处理就记录日志后 raise。"
     },
