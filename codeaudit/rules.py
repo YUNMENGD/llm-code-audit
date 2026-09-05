@@ -92,7 +92,7 @@ def _block_reraises(lines: list[str], idx: int) -> bool:
 
 _PROBE_STMT = re.compile(
     r"^(continue|return\s+(False|True|None|default|-?\d+|[\"'][^\"']*[\"'])\s*$"
-    r"|return\s*$|\w+\s*=\s*(None|False|True|\[\]|\{\})\s*(#.*)?$)")
+    r"|return\s*$|\w+\s*=\s*(None|False|True|\[\]|\{\}|[\"'][^\"']*[\"']?)\s*(#.*)?$)")
 # 注意：pass 不在豁免内——"异常处理不当"是申报书明确的研究目标缺陷类，
 # 静默吞掉必须保留报警；确属故意的（如 __del__ 清理）作者应显式 # noqa 表明意图。
 

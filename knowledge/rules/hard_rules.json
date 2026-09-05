@@ -36,8 +36,8 @@
       "category": "security",
       "severity": "critical",
       "source": "CWE-95 https://cwe.mitre.org/data/definitions/95.html",
-      "pattern": "\\b(eval|exec)\\s*\\(",
-      "why": "eval/exec 会把输入当作 Python 代码执行。",
+      "pattern": "(?<![.\\w])(?<!def )(?:eval|exec)\\s*\\(",
+      "why": "eval/exec 会把输入当作 Python 代码执行。（不匹配 self.eval() / def eval 等方法名撞车，只报 builtin 真调用）",
       "impact": "任意代码执行。",
       "suggestion": "表达式求值用 ast.literal_eval；其他场景改为显式分支逻辑。"
     },
