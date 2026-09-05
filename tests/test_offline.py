@@ -421,7 +421,7 @@ fake_c = [
 ]
 batch = "def sync(cursor):\n    user_id = cursor.fetchone()\n    handle(user_id)\n"
 web_h = ("@app.route('/o')\ndef h(request):\n"
-         "    return get(order_id=request.args['id'])\n")
+         "    return get(user_id=request.args['id'])\n")
 ids_b = {h["id"] for h in RT.retrieve(batch, items=fake_c, scope=batch)}
 ids_w = {h["id"] for h in RT.retrieve(web_h, items=fake_c, scope=web_h)}
 check("无外部输入模块否决IDOR", "CWE-639" not in ids_b)
