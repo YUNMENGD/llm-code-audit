@@ -35,11 +35,17 @@
 - 与 flask AI 实验（缺陷类 FP≈82%）两个独立量级互相印证——
   **"成熟开源库上，未经治理的检测器 precision 约 0.2"** 成为可信基线数字
 - 误报五模式画像补全：A 设计特性 / B 护栏失明 / C 输入源误判 / D 文档残留 / **E 字符串内敏感词（新）**
-- 治理优先级由数据决定：E（AST 常量行集复用 _docstring_mask，一次修掉 werkzeug R-SEC-003×8、trio R-LOG-003×6、R-SEC-008×2 共 16 条）> `# noqa` 豁免 > 所有权静态检测（难，留给 LLM 层）
+- **模式 E 归属修正（诊断复核）**：werkzeug R-SEC-003×8 经逐条核验为**真 exec 代码**
+  （console.py:177 等，属 A 设计特性、不该遮）；E 的真目标是 trio 的 shell=True 报错文案、
+  f-string 文档里的 `is "..."` 等纯文案命中。列级遮蔽（起点落在字符串文本 token 内才弃）
+  恰好精确区分二者——7 项边界测试含"f-string 表达式内真 exec 不误伤"验证通过。
+- 治理优先级由数据决定：E（已实施，见行动项1）> `# noqa` 豁免 > 所有权静态检测（难，留给 LLM 层）
 
 ## 沉淀到系统的行动项（按此顺序执行）
 
-1. [ ] guards/verify 新增"命中行处于字符串字面量内则弃"（复用 AST mask，模式 E）
+1. [x] 模式 E 列级字符串遮蔽（分支 fix/treat-e-string-mask：tokenize STRING+FSTRING_MIDDLE
+   文本段，f-string 表达式区不遮，tokenize 失败保守放行；六库重扫 R-LOG-003 32→1、
+   R-SEC-008 8→0，werkzeug 真 exec×8 全保留；121 测试全绿）
 2. [ ] hard_rules exclude 扩展支持 `# noqa` 通用豁免
 3. [x] EXCLUDE_PARTS 增加 `_tests`/`testing` 目录与 `test_` 文件前缀（采样器，本次已修：全库统计 185→152 文件、305→235 告警）
-4. [ ] 每完成一项 → 重跑本批 43 条对照，FP 数下降即为量化收益（缓存使重跑零成本）
+4. [ ] 每完成一项 → 重跑本批 59 条对照，FP 数下降即为量化收益（缓存使重跑零成本）
