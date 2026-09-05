@@ -14,3 +14,8 @@ markdown>=3.5
 
 # 测试
 pytest>=8.0.0
+
+# 桌面应用形态（F 项，可选）：python desktop.py
+fastapi>=0.110
+uvicorn>=0.29
+pywebview>=5.0    # 装不上会自动退化为浏览器模式，功能一致
