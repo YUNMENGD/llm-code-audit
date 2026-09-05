@@ -18,6 +18,10 @@ from .models import Category, Issue, Severity
 RULES_DIR = Path(__file__).resolve().parent.parent / "knowledge" / "rules"
 GUARDS_FILE = RULES_DIR / "guards.json"
 
+# 通用抑制惯例（bandit/ruff/pylint 生态共识）：作者显式标记"我知道，故意的"。
+# 注意不含 type: ignore——那是类型系统标记，不表达安全/资源语义豁免。
+_SUPPRESS_RX = re.compile(r"#\s*(noqa|nosec|pylint:\s*disable)\b")
+
 
 def load_guards() -> list[dict]:
     try:
@@ -191,6 +195,8 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
                 continue                 # 匹配起点在字符串文本内 → 文案非代码
             if any(ex in ln for ex in r.get("exclude", [])):
                 continue
+            if _SUPPRESS_RX.search(ln):
+                continue                 # 作者显式抑制标记（ruff/bandit/pylint 惯例）
             if r.get("body_check") == "no_reraise" and _block_reraises(lines, i):
                 continue
             hits.append(Issue(
