@@ -90,6 +90,65 @@ def _block_reraises(lines: list[str], idx: int) -> bool:
     return False
 
 
+_PROBE_STMT = re.compile(
+    r"^(continue|return\s+(False|True|None|default|-?\d+|[\"'][^\"']*[\"'])\s*$"
+    r"|return\s*$|\w+\s*=\s*(None|False|True|\[\]|\{\})\s*(#.*)?$)")
+# 注意：pass 不在豁免内——"异常处理不当"是申报书明确的研究目标缺陷类，
+# 静默吞掉必须保留报警；确属故意的（如 __del__ 清理）作者应显式 # noqa 表明意图。
+
+
+def _except_probe(lines: list[str], idx: int) -> bool:
+    """探测惯用法（模式F1）：显式 except Exception 且块体是降级返回/兜底赋值。
+
+    能力探测范式 `try: 试操作 / except Exception: return False` 是 CLI/IO 库的
+    合法写法。保守边界：裸 except 与 BaseException 不豁免；块体含 pass/raise
+    或赋值/调用等实质逻辑不豁免；嵌套 try 探测（体以 try: 开头）不覆盖——
+    宁可留报不误删真缺陷。
+    """
+    row = lines[idx].strip()
+    if not re.match(r"except\s+Exception(\s+as\s+\w+)?\s*:\s*(#.*)?$", row):
+        return False
+    base = len(lines[idx]) - len(lines[idx].lstrip())
+    body: list[str] = []
+    for j in range(idx + 1, min(len(lines), idx + 8)):
+        b = lines[j]
+        if not b.strip() or b.lstrip().startswith("#"):
+            continue
+        if len(b) - len(b.lstrip()) <= base:
+            break
+        body.append(b.strip())
+    if not body:
+        return False
+    for stmt in body:
+        if stmt.startswith(("raise", "try", "if", "for", "while", "with")):
+            return False
+        if not _PROBE_STMT.match(stmt):
+            return False
+    return True
+
+
+_VAR_ASSIGN = re.compile(r"^\s*(\w+)\s*=\s*(?:[^\n]*\b(?:open|connect)\s*\()")
+
+
+def _resource_managed(lines: list[str], idx: int) -> bool:
+    """finally/下游接管（模式扩展）：赋值行下方窗口出现同名 .close() 即豁免。
+
+    click _termui_impl 实证：null=open(...)+finally null.close()、
+    f=open(...)+if f is not None: f.close() 都是正确生命周期管理。
+    残余风险（部分路径漏关）为启发式已知边界，交由 LLM 层复核；
+    作者真在意的误报可用 # noqa 显式豁免（已支持）。
+    """
+    m = _VAR_ASSIGN.match(lines[idx])
+    if not m:
+        return False
+    var = m.group(1)
+    rx = re.compile(rf"\b{re.escape(var)}\.close\s*\(")
+    for j in range(idx + 1, min(len(lines), idx + 40)):
+        if rx.search(lines[j]):
+            return True
+    return False
+
+
 def _docstring_mask(lines: list[str], source: str = "") -> list[bool]:
     """标记每行是否落在字符串字面量内部（docstring / 示例代码 / 日志文案）。
 
@@ -199,6 +258,10 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
                 continue                 # 作者显式抑制标记（ruff/bandit/pylint 惯例）
             if r.get("body_check") == "no_reraise" and _block_reraises(lines, i):
                 continue
+            if r.get("probe_check") == "except_probe" and _except_probe(lines, i):
+                continue                 # 模式F1：能力探测降级返回
+            if r.get("resource_check") == "managed" and _resource_managed(lines, i):
+                continue                 # finally/下游已接管关闭
             hits.append(Issue(
                 rule_id=r["id"],
                 category=_cat(r.get("category", "style")),

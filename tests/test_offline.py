@@ -74,6 +74,24 @@ check("ruff noqa 抑制标记生效", not any(h.line_start == 1 for h in hits_no
 check("无标记同行仍命中(反向)", any(h.line_start == 2 for h in hits_noqa))
 check("type: ignore 不算抑制标记", any(
     h.line_start == 1 for h in RL.scan_source('f = open(p)  # type: ignore', rs)))
+probe = ("def _writable(s):\n"
+         "    try:\n        s.write(b'')\n"
+         "    except Exception:\n        return False\n"
+         "    return True\n")
+check("F1探测降级返回豁免", not any(
+    h.line_start == 5 for h in RL.scan_source(probe, rs, "p.py")))
+swallow = "try:\n    x()\nexcept Exception:\n    pass\n"
+check("静默吞异常仍报(pass不豁免)", any(
+    h.line_start == 3 for h in RL.scan_source(swallow, rs, "s.py")))
+bare = "try:\n    x()\nexcept:\n    return None\n"
+check("裸except不获探测豁免", any(
+    h.line_start == 3 for h in RL.scan_source(bare, rs, "b.py")))
+managed = ("null = open('/dev/null', 'w')\n"
+           "try:\n    run()\nfinally:\n    null.close()\n"
+           "other = open('x')\n")
+hits_m = RL.scan_source(managed, rs, "m.py")
+check("finally接管豁免", not any(h.line_start == 1 for h in hits_m))
+check("无接管仍报(反向)", any(h.line_start == 6 for h in hits_m))
 
 print("[4] retriever：知识库检索")
 kb = RT.load_knowledge()
