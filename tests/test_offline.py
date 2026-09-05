@@ -358,6 +358,37 @@ st = Issue(rule_id="CWE-502", category=Category.SECURITY, severity=Severity.CRIT
            detector="static", verified=True)
 keep3, _ = VD.guard_suppress([st], {"a.py": cov})
 check("静态告警不受抑制", keep3 == [st])
-check("真实 guards 可加载", len(RL.load_guards()) >= 7)
+check("真实 guards 可加载", len(RL.load_guards()) >= 14)
+
+print("\n[13] 治B：同行护栏识别（flask 误报模式复现）")
+src_w = ("def has_app_context():\n"
+         "    return (ctx := _cv_app.get(None)) is not None and ctx.has_request\n")
+cov_w = RL.guard_coverage(src_w)
+check("海象短路命中 LOG-012", 2 in cov_w.get("LOG-012", set()))
+i_w = Issue(rule_id="LOG-012", category=Category.LOGIC, severity=Severity.HIGH,
+            title="可空未判空", path="ctx.py", line_start=2, evidence="e",
+            analysis="a", fix="f", confidence=0.95, detector="llm")
+keep_w, supp_w = VD.guard_suppress([i_w], {"ctx.py": cov_w})
+check("flask ctx 型误报被抑制", keep_w == [] and len(supp_w) == 1)
+src_tag = ("def check(self, value):\n"
+           "    return (\n"
+           "        isinstance(value, dict)\n"
+           "        and len(value) == 1\n"
+           "        and next(iter(value)) in self.tags\n"
+           "    )\n")
+cov_tag = RL.guard_coverage(src_tag)
+check("and 链长度护栏命中 LOG-001", 4 in cov_tag.get("LOG-001", set()))
+i_tag = Issue(rule_id="LOG-001", category=Category.LOGIC, severity=Severity.HIGH,
+              title="空dict StopIteration", path="tag.py", line_start=5, evidence="e",
+              analysis="a", fix="f", confidence=0.9, detector="llm")
+keep_tag, _ = VD.guard_suppress([i_tag], {"tag.py": cov_tag})
+check("tag.py 型误报被抑制", keep_tag == [])
+src_noguard = "def f(d):\n    return d[\"k\"]\n"
+cov_ng = RL.guard_coverage(src_noguard)
+i_ng = Issue(rule_id="LOG-001", category=Category.LOGIC, severity=Severity.HIGH,
+             title="key不存在", path="n.py", line_start=2, evidence="e",
+             analysis="a", fix="f", confidence=0.9, detector="llm")
+keep_ng, _ = VD.guard_suppress([i_ng], {"n.py": cov_ng})
+check("无护栏真缺陷不被误抑制", keep_ng == [i_ng])
 
 print(f"\n全部通过：{PASS} 项 ✓")

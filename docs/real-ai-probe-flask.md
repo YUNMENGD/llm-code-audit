@@ -60,3 +60,30 @@ AI+静态合并输出 75 条（critical 9 / high 15 / medium 35 / low 16；llm�
 python -m codeaudit audit <库源码目录> -d file --html out/x.html   # 24文件≈11分钟
 # out/flask_report.{md,html,json} 为本次完整产出
 ```
+
+## 治 B 落地结果（同日，feat/treat-b-guards）
+
+新增两条函数级护栏并接入既有 guard_suppress 管线：
+- `G-WALRUS-NOTNONE`：`:= ...get(` / `is not None and` 判空短路
+- `G-LEN-SHORTCIRCUIT`：`len(x) == N and ...` 与 `and len(...)` 链式长度校验
+
+**效果（flask 缓存重放）**：75 → 69。但 6 条差异要分开归因（避免错误记功）：
+
+| 归因 | 告警 | 机制 | 是否确定性 |
+|---|---|---|---|
+| **治 B 护栏**（本分支） | ctx.py:232 LOG-012、tag.py:107 LOG-001 | guard_suppress 直接抑制 | ✅ 重放日志明示"抑制 2 条" |
+| **D 模式间接触发**（fix/static-probe-fp 合入的副作用） | app.py 的 664/374/366/216 共 4 条 | AST 文档串屏蔽改变了注入给模型的 hints → app.py prompt 变 → 缓存 miss 重审后模型不再报 | ❌ 依赖模型行为，属"提示净化"而非确定性防线 |
+
+日志证据：首轮重放"命中 22 / 未命中 2"——miss 的正是 app.py 与 config.py；
+第二轮起 24/24 全命中（新 prompt 入缓存），结果与首轮一致。
+
+**过度抑制事故与修复**（本实验最有价值的负面记录）：第一版海象 pattern 用了
+宽松的 `\bis not None\b`，diff 复核发现 config.py:41 的判空守卫（保护 42 行）
+靠行号窗口串位吞掉了 39 行的 `obj.config[...]` KeyError——而 39 行恰是核验表
+✅存疑候选，属漏报方向错误。收紧为强制 `is not None and`（判空与使用同表达式
+耦合）后串位消失，B2 重放确认 39 行恢复上报。
+**教训：护栏 pattern 必须要求防御与危险点表达式级耦合，宽松匹配 + 行号窗口 = 静默漏报。**
+
+回归：106 项测试全绿（含 5 项治 B 专项正反断言）。方法论沉淀：verify/guards 层改动
+一律用「旧报告 → 缓存重放 → 集合 diff」三步验证，成本趋零；确定性抑制与模型行为
+变化必须分开归因——这套纪律后续推广到 A/C 治理。

@@ -70,6 +70,20 @@
       "why": "`x[0] if x else 默认` 已就地处理空集合/除零，再报边界即误报"
     },
     {
+      "id": "G-WALRUS-NOTNONE",
+      "title": "海象/判空短路防御",
+      "pattern": ":=.*\\.get\\(|is not None and",
+      "protects": ["LOG-012", "CWE-476"],
+      "why": "`(x := y.get(None)) is not None and x.attr` 判空后立即使用是短路惯用法；要求 is not None 紧跟 and 使用，避免裸判空守卫串位误抑制"
+    },
+    {
+      "id": "G-LEN-SHORTCIRCUIT",
+      "title": "长度校验短路护栏",
+      "pattern": "len\\([^)]*\\)\\s*==\\s*\\d+\\s+and\\b|\\band\\s+len\\([^)]*\\)\\s*[=!<>]",
+      "protects": ["LOG-001", "LOG-012"],
+      "why": "and 短路保证 len 校验先通过才执行取值表达式，StopIteration/IndexError 类边界已就地防住"
+    },
+    {
       "id": "G-ENV-GET",
       "title": "凭据经 environ.get 运行时读取",
       "pattern": "environ\\.get\\(|environ\\[",
