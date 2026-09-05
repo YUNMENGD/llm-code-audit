@@ -103,7 +103,7 @@
       "category": "logic",
       "severity": "medium",
       "source": "PEP8 / CWE-390",
-      "pattern": "except\\s*(:|Exception\\s*:|BaseException\\s*:)",
+      "pattern": "\\bexcept\\s*(:|Exception\\s*:|BaseException\\s*:)",
       "body_check": "no_reraise",
       "why": "捕获过宽或裸 except 会吞掉 KeyboardInterrupt/SystemExit 等，异常传播被中断。块体内清理后 raise 重抛的防御模式不报（body_check=no_reraise）。",
       "impact": "故障不可见，问题扩散到下游才暴露，排障成本极高。",
@@ -149,6 +149,8 @@
       "severity": "low",
       "source": "团队规约",
       "pattern": "#\\s*(TODO|FIXME|HACK|XXX)",
+      "match_comment": true,
+      "skip_docstring": true,
       "why": "临时代码标记长期滞留，说明欠账未还。",
       "impact": "关键缺陷可能被无限期搁置。",
       "suggestion": "转为 Issue 跟踪并从代码中清除，或完成修复。"

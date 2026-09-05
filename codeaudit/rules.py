@@ -86,9 +86,52 @@ def _block_reraises(lines: list[str], idx: int) -> bool:
     return False
 
 
+def _docstring_mask(lines: list[str], source: str = "") -> list[bool]:
+    """标记每行是否落在字符串字面量内部（docstring / 示例代码 / 日志文案）。
+
+    首选 AST：真实解析所有 str 节点，覆盖任意引号形态与转义（行计数法会把
+    r-string 末尾反斜杠、字符串里的 # 号等算错）；SyntaxError 时退回
+    三引号奇偶计数兜底。仅屏蔽字符串的「中间行」——开闭行常与真代码
+    同行混排，不整行排除，避免误挡真缺陷。
+    """
+    mask = [False] * len(lines)
+    try:
+        import ast as _ast
+        tree = _ast.parse(source or "\n".join(lines))
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.Constant) and isinstance(node.value, str):
+                if node.lineno is None or node.end_lineno is None:
+                    continue
+                if node.end_lineno > node.lineno:      # 多行串：屏蔽中间行
+                    for j in range(node.lineno, node.end_lineno - 1):
+                        if 0 <= j < len(mask):
+                            mask[j] = True
+        return mask
+    except (SyntaxError, ValueError, MemoryError):
+        pass
+    in_str: str | None = None
+    out: list[bool] = []
+    for line in lines:
+        code = line.split("#", 1)[0] if in_str is None else line
+        out.append(in_str is not None)
+        dq = code.count('"""')
+        sq = code.count("'''")
+        if in_str is None:
+            if dq % 2 == 1:
+                in_str = '"'
+            elif sq % 2 == 1:
+                in_str = "'"
+        elif in_str == '"' and dq % 2 == 1:
+            in_str = None
+        elif in_str == "'" and sq % 2 == 1:
+            in_str = None
+    return out
+
+
 def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[Issue]:
     """对一段源码跑全部硬性规则，返回命中的 Issue 列表。"""
     lines = source.splitlines()
+    doc = _docstring_mask(lines, source)
     hits: list[Issue] = []
     for r in rules:
         if not r.get("pattern"):
@@ -97,7 +140,13 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
             rx = re.compile(r["pattern"])
         except re.error:
             continue
+        skip_doc = r.get("skip_docstring", True)
+        match_comment = r.get("match_comment", False)
         for i, ln in enumerate(lines):
+            if skip_doc and doc[i]:
+                continue
+            if not match_comment and ln.lstrip().startswith("#"):
+                continue
             if not rx.search(ln):
                 continue
             if any(ex in ln for ex in r.get("exclude", [])):
