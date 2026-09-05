@@ -26,6 +26,7 @@
       "tags": ["ssti", "template", "render", "exec"],
       "triggers": ["render_template_string", "Template(", "from_string", "jinja2", "Environment"],
       "pattern": "用户输入被当作模板/代码字符串渲染，Jinja2 等模板引擎可经对象图逃逸执行任意 Python。",
+      "not_when": ["def render_template_string", "def stream_template_string", "jinja_env.from_string(source"],
       "impact": "远程代码执行，接管服务进程。",
       "fix": "永远不要把用户输入作为模板字符串渲染；固定模板名，用户数据只作变量传入；确需动态模板用沙箱（RestrictedPython）。",
       "source": "https://cwe.mitre.org/data/definitions/94.html"

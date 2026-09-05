@@ -51,6 +51,15 @@ def _kw_score(query_lower: str, qwords: set, it: dict) -> float:
     return s
 
 
+def _vetoed(it: dict, query_lower: str) -> bool:
+    """适用边界硬否决（治 A）：not_when 命中说明本单元是该 API 的定义者
+    （框架/库源码本身），该 CWE 对它不适用。如 flask templating.py 含
+    `def render_template_string` → 对 CWE-94 是越界，直接剔除而非降权
+    （实测 soft 扣分打不过多 trigger 加分）。调用方 `render_template_string(tpl)`
+    不含 `def ` 前缀，不会被误伤，真攻击面照常命中。"""
+    return any(p.lower() in query_lower for p in it.get("not_when", []))
+
+
 def _embed_text(it: dict) -> str:
     text = " ".join([
         it.get("title", ""), it.get("pattern", ""),
@@ -133,16 +142,25 @@ def _vector_scores(query: str, items) -> dict[str, float]:
     return {i: float(max(s, 0.0)) for i, s in zip(ids, sims)}
 
 
-def retrieve(query: str, top_k: int = 5, items: list[dict] | None = None) -> list[dict]:
+def retrieve(query: str, top_k: int = 5, items: list[dict] | None = None,
+             scope: str | None = None) -> list[dict]:
     """按代码特征检索最相关知识条目。
 
     有向量能力时：score = 0.5·归一化关键词分 + 0.5·余弦相似度；
     否则退化为纯关键词打分（分值为原始加权命中数）。
+    scope：否决判定用的完整上下文（默认取 query）。打分窗口与 veto 分离——
+    扩大打分窗口会改变所有长文件的 prompt（缓存全失效），而 def 定义行
+    通常在后部只需全文 veto，故单列参数。
     """
     items = items if items is not None else load_knowledge()
     if not items:
         return []
     ql = query.lower()
+    # 「哪些知识适用于这段代码」是检索语义本身：定义者文件剔除越界条目
+    # （治A not_when 否决），调用方文件照常命中。向量矩阵按全量条目构建
+    # （缓存 key 与 query 无关，否决不会引起重建）。
+    vl = (scope if scope is not None else query).lower()
+    vetoed = {it["id"] for it in items if _vetoed(it, vl)}
     qwords = {w for w in re.findall(r"[a-z_]{3,}", ql) if w not in _STOP}
     kw = {it["id"]: _kw_score(ql, qwords, it) for it in items}
     vec = _vector_scores(query, items)
@@ -150,11 +168,15 @@ def retrieve(query: str, top_k: int = 5, items: list[dict] | None = None) -> lis
     if vec:
         mx = max(kw.values()) or 1.0
         for it in items:
+            if it["id"] in vetoed:
+                continue
             total = 0.5 * (kw[it["id"]] / mx) + 0.5 * vec.get(it["id"], 0.0)
             if total > 0.05:
                 d = dict(it); d["score"] = round(total, 3); scored.append(d)
     else:
         for it in items:
+            if it["id"] in vetoed:
+                continue
             if kw[it["id"]] > 0:
                 d = dict(it); d["score"] = round(kw[it["id"]], 1); scored.append(d)
     scored.sort(key=lambda x: -x["score"])

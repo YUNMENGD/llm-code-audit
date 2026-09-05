@@ -391,4 +391,24 @@ i_ng = Issue(rule_id="LOG-001", category=Category.LOGIC, severity=Severity.HIGH,
 keep_ng, _ = VD.guard_suppress([i_ng], {"n.py": cov_ng})
 check("无护栏真缺陷不被误抑制", keep_ng == [i_ng])
 
+print("\n[14] 治A：not_when 适用边界硬否决")
+fake_items = [
+    {"id": "CWE-94", "title": "SSTI", "category": "security", "severity": "critical",
+     "triggers": ["render_template_string"], "tags": ["ssti"],
+     "not_when": ["def render_template_string"]},
+    {"id": "CWE-89", "title": "SQLi", "category": "security", "severity": "critical",
+     "triggers": ["execute"], "tags": ["sql"]},
+]
+impl_src = ("def render_template_string(source):\n    return env.from_string(source)\n"
+            "def q(c): return c.execute(sql)\n")
+caller_src = ("def handler(c):\n    tpl = request.args['t']\n"
+              "    c.execute(sql)\n    return render_template_string(tpl)\n")
+ids_impl = {h["id"] for h in RT.retrieve(impl_src, items=fake_items)}
+ids_caller = {h["id"] for h in RT.retrieve(caller_src, items=fake_items)}
+check("定义者文件被否决 CWE-94", "CWE-94" not in ids_impl)
+check("调用者文件保留 CWE-94", "CWE-94" in ids_caller)
+check("无关条目不被连坐否决", "CWE-89" in ids_impl and "CWE-89" in ids_caller)
+check("真实库 CWE-94 已带 not_when",
+      any("not_when" in it and it["id"] == "CWE-94" for it in RT.load_knowledge()))
+
 print(f"\n全部通过：{PASS} 项 ✓")
