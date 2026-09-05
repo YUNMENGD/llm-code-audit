@@ -483,6 +483,9 @@ check("模式统计只数被消除的F", sum(removed.values()) == 16)
 check("F1探测误报被计入消除", removed.get("F1", 0) >= 8)
 check("真TODO未被消除(不在removed)", removed.get("TODO", 0) == 0)
 check("werkzeug ground truth 可加载", len(RE.load_gt("werkzeug")["annotations"]) == 22)
+check("flask ground truth 可加载", len(RE.load_gt("flask")["annotations"]) == 5)
+check("flask 为残留基线口径(无T)", all(a["verdict"] != "T"
+      for a in RE.load_gt("flask")["annotations"]))
 
 print("\n[18] NAME：eval/exec 方法名撞车豁免（R-SEC-003 收紧）")
 check("真exec调用仍报", _hit("exec(code, self.locals)", "R-SEC-003"))

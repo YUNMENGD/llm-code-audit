@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "lib": "flask",
+    "source": "https://github.com/pallets/flask",
+    "clone": "git clone --depth 1 https://github.com/pallets/flask.git realtest/flask",
+    "scope": "src/flask 主包（tests/docs/examples 除外）",
+    "method": "逐处打开源码上下文人工判定 T/F/?，出处 docs/real-ai-probe-flask.md + 本次静态告警逐行核验（_flask_ctx 导出）",
+    "note": "基线=治理链全开后扫描（flask 治理前逐行清单未完整留档，探针实验仅有聚合数 8→6）。因此本库 removed 恒为 0，价值是提供治理后残留的 precision 数据点。",
+    "annotated_at": "2026-09-06",
+    "verdicts": {"T": "真缺陷(应报)", "F": "误报", "?": "可辩护建议/存疑(不计P分母)"},
+    "patterns": {"A": "设计特性当漏洞", "F1": "探测/降级惯用法", "TODO": "真滞留注释(缺陷)", "C": "需调用方/部署证据"}
+  },
+  "annotations": [
+    {"file": "cli.py", "line": 1023, "rule": "R-SEC-003", "verdict": "?", "pattern": "A",
+     "why": "eval(compile(PYTHONSTARTUP文件)) — 支持解释器启动脚本是刻意功能；攻击前提是已能改环境变量(即已有本机代码执行权)。存疑不算F"},
+    {"file": "config.py", "line": 209, "rule": "R-SEC-003", "verdict": "F", "pattern": "A",
+     "why": "from_pyfile 的 exec(compile(config)) 是文档承诺的配置加载机制(等价 import)，文件路径来自开发者调用方"},
+    {"file": "cli.py", "line": 650, "rule": "R-LOG-001", "verdict": "F", "pattern": "A",
+     "why": "except Exception 后 click.secho 打印完整 traceback——CLI 兜底不崩是刻意设计，异常有可见输出非静默"},
+    {"file": "config.py", "line": 163, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1",
+     "why": "loads 失败 pass(保持字符串值) — 注释明示意图的降级路径；因体为 pass 不被探测豁免(政策维持保守)"},
+    {"file": "sessions.py", "line": 281, "rule": "R-SEC-007", "verdict": "?", "pattern": "A",
+     "why": "_lazy_sha1 会话签名(FIPS 延迟加载)。HMAC-SHA1 偏弱但属 itsdangerous 生态标准选择，可辩护建议"}
+  ]
+}
