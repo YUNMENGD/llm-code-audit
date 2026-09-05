@@ -34,6 +34,26 @@ app = FastAPI(title="LLM Code Audit", docs_url=None, redoc_url=None)
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
+_run_lock = threading.Lock()   # stdout 捕获是进程级的，任务必须串行跑
+
+
+class _LineBuf(io.TextIOBase):
+    """把被捕获的 print 按行实时推入 job["progress"]（前端轮询即见进度）。"""
+
+    def __init__(self, job: dict) -> None:
+        self._job = job
+        self._pending = ""
+
+    def write(self, s: str) -> int:
+        self._pending += s
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            if line.strip():
+                self._job["progress"].append(line.rstrip())
+        return len(s)
+
+    def flush(self) -> None:
+        pass
 
 
 class AuditReq(BaseModel):
@@ -43,37 +63,42 @@ class AuditReq(BaseModel):
     examples: bool = True
 
 
+def _dispatch(req: AuditReq):
+    """static：仅规则层（免费秒级）；ai：走完整 audit_path（其进度 print 被捕获）。"""
+    if req.mode == "static":
+        from codeaudit.models import AuditReport
+        target = Path(req.target)
+        rs = RL.load_rules()
+        rep = AuditReport(target=str(target))
+        files = [target] if target.is_file() else sorted(
+            p for p in target.rglob("*.py")
+            if not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv")))
+        for i, f in enumerate(files, 1):
+            src = f.read_text(encoding="utf-8", errors="replace")
+            rep.issues.extend(RL.scan_source(src, rs, str(f)))
+            print(f"[{i}/{len(files)}] 扫描 {f.name}")
+        rep.engine = {"model": "static-rules", "llm_used": False, "depth": req.depth}
+        rep.stats = {"total": len(rep.issues),
+                     "by_severity": rep.count_by("severity"),
+                     "by_category": rep.count_by("category"),
+                     "by_detector": rep.count_by("detector"),
+                     "elapsed_sec": 0}
+        return rep
+    return audit_path(req.target, depth=req.depth,
+                      use_examples=req.examples or None)
+
+
 def _run_job(job_id: str, req: AuditReq) -> None:
     job = _jobs[job_id]
-    buf = io.StringIO()
     try:
-        kwargs: dict = {"depth": req.depth, "use_examples": req.examples or None}
-        if req.mode == "static":
-            # 免密钥：直接跑规则层，不调模型、不扣额度
-            from codeaudit import parser as P
-            from codeaudit.models import AuditReport
-            target = Path(req.target)
-            rs = RL.load_rules()
-            rep = AuditReport(target=str(target))
-            files = [target] if target.is_file() else sorted(
-                p for p in target.rglob("*.py")
-                if not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv")))
-            for i, f in enumerate(files, 1):
-                src = f.read_text(encoding="utf-8", errors="replace")
-                rep.issues.extend(RL.scan_source(src, rs, str(f)))
-                print(f"[{i}/{len(files)}] {f.name}")
-            rep.engine = {"model": "static-rules", "llm_used": False,
-                          "depth": req.depth, "seconds": 0}
-            rep.stats = {"total": len(rep.issues),
-                         "by_severity": rep.count_by("severity"),
-                         "by_category": rep.count_by("category"),
-                         "by_detector": rep.count_by("detector")}
-        else:
-            rep = audit_path(req.target, **kwargs)
+        with _run_lock, contextlib.redirect_stdout(_LineBuf(job)):
+            job["progress"].append(
+                f"任务开始 · 模式={'AI 深度审计（函数逐个调用模型，慢但深）' if req.mode == 'ai' else '静态规则检查'} · 粒度={req.depth}")
+            rep = _dispatch(req)
+            job["progress"].append("生成报告中…")
         job["report"] = rep
         job["html"] = RP.render_html(rep)
         job["markdown"] = RP.render_markdown(rep)
-        job["progress"] = job["progress"] + [ln for ln in buf.getvalue().splitlines() if ln.strip()]
         job["status"] = "done"
     except Exception as e:                       # noqa: BLE001 前端需要看到失败原因
         job["error"] = f"{type(e).__name__}: {e}"
@@ -124,6 +149,31 @@ def job_status(job_id: str) -> dict:
             "elapsed": round(time.time() - job["started_at"], 1),
             "progress": job["progress"][-60:],
             "error": job.get("error")}
+
+
+@app.get("/api/pick")
+def pick(kind: str = "file") -> dict:
+    """弹系统文件/目录选择框（后端与前端同机）。kind: file | dir。
+
+    拖拽在 webview 里常拿不到真实路径，改用原生对话框最稳。tkinter 弹在
+    主线程外可能受限，异常时返回提示让前端回退到手输路径。
+    """
+    try:
+        import tkinter
+        from tkinter import filedialog
+        root = tkinter.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        if kind == "dir":
+            path = filedialog.askdirectory(title="选择要审计的文件夹")
+        else:
+            path = filedialog.askopenfilename(
+                title="选择要审计的 Python 文件",
+                filetypes=[("Python 文件", "*.py"), ("所有文件", "*.*")])
+        root.destroy()
+        return {"path": path or ""}
+    except Exception as e:                        # noqa: BLE001
+        return {"path": "", "error": f"文件对话框不可用：{type(e).__name__}，请手动输入路径"}
 
 
 @app.get("/api/result/{job_id}")

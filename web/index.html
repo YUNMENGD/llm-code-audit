@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>大模型代码审计系统</title>
 <style>
-  :root { --bg:#f5f8fd; --card:#ffffff; --line:#dce8f7; --txt:#2b3a52; --dim:#8496b0; --accent:#4a90e2; --ok:#2fbf8f; --err:#e05c5c; }
+  :root { --bg:#f5f8fd; --card:#fff; --line:#dce8f7; --txt:#2b3a52; --dim:#8496b0; --accent:#4a90e2; --ok:#2fbf8f; --err:#e05c5c; }
   * { box-sizing:border-box; margin:0; }
   body { background:var(--bg); color:var(--txt); font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif; }
   header { padding:12px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
@@ -13,20 +13,26 @@
   header .env { margin-left:auto; font-size:12px; color:var(--dim); display:flex; gap:14px; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
   .dot.on { background:var(--ok); } .dot.off { background:var(--dim); }
-  main { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:14px 20px; height:calc(100vh - 48px); }
+  main { display:grid; grid-template-columns:340px 1fr; gap:14px; padding:14px 20px; height:calc(100vh - 48px); }
   .panel { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; overflow:auto; }
   .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:8px; }
   label { display:block; margin:10px 0 4px; font-size:12px; color:var(--dim); }
   input[type=text] { width:100%; padding:8px 10px; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--txt); font-size:13px; }
+  .pickrow { display:flex; gap:6px; margin-top:6px; }
+  .pickrow button { flex:1; padding:7px 0; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
+  .pickrow button:hover { border-color:var(--accent); color:var(--accent); }
   .segs { display:flex; gap:6px; margin-top:6px; }
   .segs button { flex:1; padding:7px 0; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
   .segs button.sel { border-color:var(--accent); color:var(--accent); background:#eef5fd; }
   #run { width:100%; margin-top:14px; padding:10px; background:var(--accent); color:#fff; border:0; border-radius:6px; font-size:14px; cursor:pointer; }
   #run:disabled { opacity:.5; cursor:default; }
-  #log { margin-top:12px; background:#fafcff; border:1px solid var(--line); border-radius:6px; padding:10px; font:11px/1.7 Consolas,monospace; color:#5a7396; height:36%; overflow:auto; white-space:pre-wrap; }
-  #out { position:relative; }
+  #status { margin-top:8px; font-size:12px; color:var(--dim); min-height:18px; }
+  #status .spin { display:inline-block; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #log { margin-top:8px; background:#fafcff; border:1px solid var(--line); border-radius:6px; padding:10px; font:11px/1.7 Consolas,monospace; color:#5a7396; height:calc(100% - 360px); min-height:120px; overflow:auto; white-space:pre-wrap; }
+  #out { position:relative; display:flex; flex-direction:column; }
   #empty { color:var(--dim); text-align:center; margin-top:30vh; }
-  iframe { width:100%; height:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  iframe { flex:1; width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
   .tabs { display:flex; gap:8px; margin-bottom:8px; }
   .tabs button { padding:5px 14px; background:#fff; border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
   .tabs button.sel { border-color:var(--accent); color:var(--accent); }
@@ -34,7 +40,7 @@
   .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:#eef5fd; border:1px solid var(--line); }
   .chip b { color:var(--txt); }
   #errbox { display:none; background:#fdf0f0; border:1px solid #f2c8c8; color:#b04a4a; padding:10px 12px; border-radius:6px; margin-bottom:10px; font-size:13px; }
-  #md { display:none; background:#fbfdff; border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; height:calc(100vh - 200px); overflow:auto; }
+  #md { flex:1; display:none; background:#fbfdff; border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; overflow:auto; }
 </style>
 </head>
 <body>
@@ -50,7 +56,11 @@
   <section class="panel">
     <h2>审计配置</h2>
     <label>目标路径（.py 文件或文件夹）</label>
-    <input type="text" id="target" placeholder="D:\code\myproject 或 xx.py">
+    <input type="text" id="target" placeholder="可点下方按钮选择，或粘贴路径">
+    <div class="pickrow">
+      <button id="pick-file">选择文件</button>
+      <button id="pick-dir">选择文件夹</button>
+    </div>
     <label>模式</label>
     <div class="segs" id="modes">
       <button data-v="static" class="sel">静态检查（免费）</button>
@@ -63,23 +73,24 @@
       <button data-v="project">工程级</button>
     </div>
     <button id="run">开始审计</button>
+    <div id="status"></div>
     <pre id="log">等待任务…</pre>
   </section>
   <section class="panel" id="out">
-    <div id="empty">左侧填入路径，开始第一次审计<br><small>拖一个 .py 文件到本窗口也可以</small></div>
+    <div id="empty">左侧选路径，开始第一次审计<br><small>静态检查免费秒出；AI 深度审计在右侧显示逐步进度</small></div>
     <div id="errbox"></div>
     <div id="stats" style="display:none"></div>
     <div class="tabs" id="tabs" style="display:none">
       <button class="sel" data-t="html">报告视图</button>
       <button data-t="md">Markdown 原文</button>
     </div>
-    <iframe id="frame" style="display:none;height:calc(100vh - 200px)"></iframe>
+    <iframe id="frame" style="display:none"></iframe>
     <div id="md"></div>
   </section>
 </main>
 <script>
 const $ = s => document.querySelector(s);
-let mode = "static", depth = "file", polling = null, last = null;
+let mode = "static", depth = "file", polling = null, tick = null, lastLog = "";
 
 function seg(el, cb) {
   el.querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -92,26 +103,31 @@ seg($("#depths"), v => depth = v);
 seg($("#tabs"), v => {
   $("#frame").style.display = v === "html" ? "block" : "none";
   $("#md").style.display = v === "md" ? "block" : "none";
-  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.t === v));
 });
+
+// 原生文件选择（拖拽在 webview 里常拿不到真实路径，改用对话框）
+async function pick(kind) {
+  try {
+    const r = await (await fetch(`/api/pick?kind=${kind}`)).json();
+    if (r.error) { $("#status").textContent = r.error; return; }
+    if (r.path) $("#target").value = r.path;
+  } catch (e) { $("#status").textContent = "选择框不可用，请手动输入路径"; }
+}
+$("#pick-file").onclick = () => pick("file");
+$("#pick-dir").onclick = () => pick("dir");
 
 fetch("/api/check").then(r => r.json()).then(c => {
   $("#env-llm").innerHTML = `<span class="dot ${c.llm_ready?"on":"off"}"></span>${c.llm_ready ? c.model : "模型未配置"}`;
   $("#env-kb").textContent = `知识库 ${c.knowledge} 条`;
   $("#env-rs").textContent = `规则 ${c.rules} 条`;
-});
-
-function logLine(t) {
-  const el = $("#log");
-  el.textContent += "\n" + t;
-  el.scrollTop = el.scrollHeight;
-}
+}).catch(() => {});
 
 $("#run").onclick = async () => {
   const target = $("#target").value.trim();
-  if (!target) { alert("请填入路径"); return; }
+  if (!target) { alert("请先选择或填入路径"); return; }
   $("#run").disabled = true; $("#empty").style.display = "none";
-  $("#errbox").style.display = "none"; $("#log").textContent = "启动任务…";
+  $("#errbox").style.display = "none"; $("#log").textContent = "";
+  $("#status").innerHTML = `<span class="spin">⏳</span> 启动任务…`;
   const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({target, mode, depth})});
   const j = await r.json();
@@ -120,16 +136,22 @@ $("#run").onclick = async () => {
 };
 
 function poll(id) {
-  clearInterval(polling);
+  const start = Date.now();
+  clearInterval(polling); clearInterval(tick);
+  tick = setInterval(() => {
+    const s = ((Date.now() - start) / 1000).toFixed(0);
+    $("#status").innerHTML = `<span class="spin">⏳</span> 运行中 ${s}s${mode === "ai" ? "（AI 逐单元调用，需耐心）" : ""}`;
+  }, 1000);
   polling = setInterval(async () => {
-    const s = await (await fetch(`/api/job/${id}`)).json();
-    if (s.progress && s.progress.length) {
-      const joined = s.progress.join("\n");
-      if (joined !== last) { last = joined; $("#log").textContent = s.progress.slice(-14).join("\n"); }
+    let s; try { s = await (await fetch(`/api/job/${id}`)).json(); } catch (_) { return; }
+    if (s.progress && s.progress.join("\n") !== lastLog) {
+      lastLog = s.progress.join("\n");
+      $("#log").textContent = s.progress.join("\n");
+      $("#log").scrollTop = $("#log").scrollHeight;
     }
-    if (s.status === "done") { clearInterval(polling); render(id); }
-    else if (s.status === "error") { clearInterval(polling); fail(s.error); }
-  }, 1200);
+    if (s.status === "done") { clearInterval(polling); clearInterval(tick); render(id); }
+    else if (s.status === "error") { clearInterval(polling); clearInterval(tick); fail(s.error); }
+  }, 1000);
 }
 
 async function render(id) {
@@ -137,31 +159,26 @@ async function render(id) {
   $("#frame").srcdoc = d.html;
   $("#md").textContent = d.markdown;
   const st = d.stats || {}, sv = st.by_severity || {};
+  const sec = (sv["严重"]||sv.critical||0), high = (sv["高危"]||sv.high||0);
+  const midlow = (sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0);
+  $("#status").textContent = "✔ 完成";
   $("#stats").style.display = "flex"; $("#tabs").style.display = "flex";
-  $("#frame").style.display = "block";
+  $("#frame").style.display = "block"; $("#md").style.display = "none";
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.t === "html"));
   $("#stats").innerHTML =
     `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
-    `<span class="chip" style="color:#d05c5c">严重 <b>${sv["严重"]||sv.critical||0}</b></span>` +
-    `<span class="chip" style="color:#c07a1d">高危 <b>${sv["高危"]||sv.high||0}</b></span>` +
-    `<span class="chip" style="color:#5a7396">中低危 <b>${(sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0)}</b></span>` +
-    `<span class="chip">引擎 ${d.engine.model || "?"} · ${d.engine.seconds || 0}s${d.engine.llm_used ? " · 已走AI" : " · 纯静态"}</span>`;
+    `<span class="chip" style="color:#d05c5c">严重 <b>${sec}</b></span>` +
+    `<span class="chip" style="color:#c07a1d">高危 <b>${high}</b></span>` +
+    `<span class="chip" style="color:#5a7396">中低危 <b>${midlow}</b></span>` +
+    `<span class="chip">引擎 ${d.engine.model || "?"}${d.engine.llm_used ? " · AI" : " · 纯静态"} · ${st.elapsed_sec ?? 0}s</span>`;
   $("#run").disabled = false;
 }
 
 function fail(msg) {
+  $("#status").textContent = "";
   $("#errbox").textContent = "⚠ " + msg; $("#errbox").style.display = "block";
   $("#run").disabled = false;
 }
-
-// 拖文件进窗口 → 填路径（pywebview 下 dataTransfer 可取到真实路径；浏览器下取文件名做提示）
-document.addEventListener("dragover", e => e.preventDefault());
-document.addEventListener("drop", async e => {
-  e.preventDefault();
-  let p = "";
-  try { p = e.dataTransfer.files[0]?.path || (e.dataTransfer.files[0]?.webkitRelativePath || ""); } catch (_) {}
-  if (!p && window.pywebview) p = await window.pywebview.api.drop_path ? window.pywebview.api.drop_path() : "";
-  if (p) { $("#target").value = p; logLine("已填入拖入路径"); }
-});
 </script>
 </body>
 </html>
