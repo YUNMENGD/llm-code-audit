@@ -167,8 +167,11 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
     缓存键 = 模型名 + 完整 Prompt：代码、检索知识、few-shot、模板任一变化即 miss。
     """
     hints = RL.scan_source(unit.source, static_rules, unit.path)
+    # 打分窗口维持 [:3000]（缓存稳定：未触发否决的文件 prompt 不变）；
+    # 全文只作为 not_when 否决的 scope（定义者文件的 def 行常在 3000 之外，
+    # flask templating.py 实测教训）。
     query = unit.source[:3000] + " " + " ".join(unit.context.get("imports", []))
-    hits = R.retrieve(query, top_k=5, items=knowledge)
+    hits = R.retrieve(query, top_k=5, items=knowledge, scope=unit.source)
 
     tpl = load_prompt(f"{unit.kind}_audit.md") or load_prompt("file_audit.md")
     ex_kind = "file" if unit.kind == "project" else unit.kind

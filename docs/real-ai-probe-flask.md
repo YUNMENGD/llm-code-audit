@@ -87,3 +87,29 @@ python -m codeaudit audit <库源码目录> -d file --html out/x.html   # 24文�
 回归：106 项测试全绿（含 5 项治 B 专项正反断言）。方法论沉淀：verify/guards 层改动
 一律用「旧报告 → 缓存重放 → 集合 diff」三步验证，成本趋零；确定性抑制与模型行为
 变化必须分开归因——这套纪律后续推广到 A/C 治理。
+
+## 治 A 落地结果（feat/treat-a-framework-api）
+
+**根因发现（最有价值的产出）**：flask templating.py 那批 SSTI"严重"误报，是我们**自己的
+知识库教出来的**——CWE-94 的 triggers 含 `render_template_string`，它同时是该文件里
+Flask **定义的函数名**，检索命中就把"此处有 SSTI"当弹药注入 prompt。RAG 的反噬。
+
+**机制**：知识条目新增 `not_when`（适用边界）字段 + retriever 检索层**硬否决**——
+某单元命中 not_when 即判定"本文件是该 API 的定义者/框架源码本身"，该 CWE 对它不适用，
+检索阶段直接剔除（先试 soft 扣分，实测打不过多 trigger 加分，改 hard veto 才干净）。
+作用域天然精准：函数级审单个函数、文件级否决只作用在定义者文件，
+另处真用 `render_template_string(user_input)` 的调用方不含 `def` 前缀，照常命中（测试已验）。
+
+**缓存稳定设计**：打分窗口维持 [:3000]、全文只作 veto 的 `scope` 参数——
+24 文件重放仅 templating.py 因 prompt 变化重审（1 次计费），其余 23 全命中缓存。
+若直接放大打分窗口，会让所有长文件 prompt 变化、缓存全废。
+
+**效果与诚实边界**：critical 9→7。消除的是 templating.py:151/200（定义者场景，确定性）。
+**残留 6 条是更难的另一亚类**——app.py 的 `jinja_env.tests/globals[...] = ...`、
+scaffold 的 template_folder、__init__ 的 import：这些文件里没有 API 定义行，
+是"框架配置自己的模板引擎"，not_when 在原理上覆盖不到。
+**刻意停止**：继续给 CWE-94 堆 `jinja_env.tests\[` 等字符串能刷掉它们，但那是
+对 flask 过拟合、污染评测公正性，答辩会被"换个框架还work吗"戳穿。正解是另立
+DESIGN-API 知识类 + Prompt 纪律"配置框架自身引擎≠漏洞"（治本清单里列为后续项，
+需人工核对该判定不吞掉真实的"用不受信源配置 jinja"）。这轮的边界结论本身是成果：
+**确定性能治的（定义者）已治，模型过度兴奋的（自配置）留给语义层而非正则硬编码。**
