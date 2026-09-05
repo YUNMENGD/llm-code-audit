@@ -68,6 +68,12 @@ print("[3] rules：豁免与误报控制")
 safe = 'cursor.execute("SELECT * FROM t WHERE id=%s", (uid,))'
 check("参数化查询不误报", not any(h.rule_id == "R-SEC-001" for h in RL.scan_source(safe, rs)))
 check("注释豁免生效", not any(h.rule_id == "R-SEC-002" for h in RL.scan_source('os.system("ls")  # nosec', rs)))
+noqa_src = "self._pidfd = open(fd)  # noqa: SIM115\nother = open(p)\n"
+hits_noqa = RL.scan_source(noqa_src, rs)
+check("ruff noqa 抑制标记生效", not any(h.line_start == 1 for h in hits_noqa))
+check("无标记同行仍命中(反向)", any(h.line_start == 2 for h in hits_noqa))
+check("type: ignore 不算抑制标记", any(
+    h.line_start == 1 for h in RL.scan_source('f = open(p)  # type: ignore', rs)))
 
 print("[4] retriever：知识库检索")
 kb = RT.load_knowledge()
