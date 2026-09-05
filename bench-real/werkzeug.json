@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "lib": "werkzeug",
+    "source": "https://github.com/pallets/werkzeug",
+    "clone": "git clone --depth 1 https://github.com/pallets/werkzeug.git",
+    "pkg_subpath": "src/werkzeug",
+    "annotated_at": "2026-09-05",
+    "baseline": "治理前（未含 F1/E/noqa/RERAISE/RES 豁免）静态扫描全量 22 条，逐处读源码上下文人工核验",
+    "verdict_legend": "T=真缺陷(含低价值属实项) / F=误报 / ?=可辩护存疑(不计入 precision 确定项)",
+    "pattern_legend": "A=设计特性 NAME=同名方法误撞builtin正则 CLEAN=清理协议pass RES=finally接管 RERAISE=清理后重抛 F1=探测降级 F2=缓存降级 TODO=真实滞留 OWN=跨函数所有权",
+    "note": "库文件不入库，复现者按 clone 字段下载至 realtest/ 后跑 real-eval"
+  },
+  "annotations": [
+    {"file": "datastructures/file_storage.py", "line": 115, "rule": "R-ENG-001", "verdict": "F", "pattern": "RES", "note": "open 的 dst 由下游 finally 按 close_dst 标志关闭，治理后已正确豁免"},
+    {"file": "datastructures/file_storage.py", "line": 128, "rule": "R-LOG-001", "verdict": "F", "pattern": "CLEAN", "note": "__exit__ 协议内 stream.close() 失败 pass：退出协议惯例，清理错误可忽略"},
+    {"file": "datastructures/file_storage.py", "line": 188, "rule": "R-ENG-001", "verdict": "?", "pattern": "OWN", "note": "工厂函数返回文件对象由调用方接管，生命周期跨函数，静态层无法判所有权"},
+    {"file": "debug/__init__.py", "line": 138, "rule": "R-SEC-003", "verdict": "F", "pattern": "NAME", "note": "def eval 是方法名定义，非 builtin eval 调用"},
+    {"file": "debug/__init__.py", "line": 139, "rule": "R-SEC-003", "verdict": "F", "pattern": "NAME", "note": "self.console.eval() 是方法调用，builtin exec 实体在 console.py:177"},
+    {"file": "debug/__init__.py", "line": 369, "rule": "R-LOG-001", "verdict": "F", "pattern": "A", "note": "响应已发出后的错误兜底：注释明言 log+graceful fallback，WSGI 边界唯一出路"},
+    {"file": "debug/__init__.py", "line": 398, "rule": "R-SEC-003", "verdict": "F", "pattern": "NAME", "note": "frame.eval(command) 方法调用，非 builtin"},
+    {"file": "debug/console.py", "line": 177, "rule": "R-SEC-003", "verdict": "T", "pattern": "A", "note": "真 exec(code, self.locals)——Flask debug REPL 核心；PIN+主机信任防护在更上层。报出成立（A 模式，严重度宜降 low）"},
+    {"file": "debug/console.py", "line": 178, "rule": "R-LOG-001", "verdict": "F", "pattern": "A", "note": "runcode 失败 showtraceback()：REPL 的正常错误处理流"},
+    {"file": "debug/console.py", "line": 213, "rule": "R-SEC-003", "verdict": "F", "pattern": "NAME", "note": "def eval 方法名定义"},
+    {"file": "debug/repr.py", "line": 220, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "format_exception 失败 info='?' 字符串降级——probe 白名单未含字符串常量（扩展候选）"},
+    {"file": "debug/repr.py", "line": 237, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "dispatch_repr 失败 return fallback_repr()：兜底转换，白名单未含函数调用式降级（扩展候选）"},
+    {"file": "debug/repr.py", "line": 260, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "反射遍历属性 getattr 失败 pass 跳过单项——渲染探测惯例"},
+    {"file": "debug/tbtools.py", "line": 391, "rule": "R-SEC-003", "verdict": "F", "pattern": "NAME", "note": "def eval 方法名定义"},
+    {"file": "debug/tbtools.py", "line": 392, "rule": "R-SEC-003", "verdict": "F", "pattern": "NAME", "note": "console.eval 方法调用"},
+    {"file": "http.py", "line": 1492, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留，属实（低价值）"},
+    {"file": "middleware/lint.py", "line": 223, "rule": "R-LOG-001", "verdict": "F", "pattern": "CLEAN", "note": "lint 发 warn() 失败 pass，不影响主流程"},
+    {"file": "routing/rules.py", "line": 736, "rule": "R-SEC-003", "verdict": "?", "pattern": "A", "note": "exec 执行框架自编译的路由 builder 字节码（源是开发者 rule 串非远程输入）；设计特性边界"},
+    {"file": "serving.py", "line": 389, "rule": "R-LOG-001", "verdict": "F", "pattern": "CLEAN", "note": "尝试补发 500 的最后兜底，失败只能 pass（再抛无人接收）"},
+    {"file": "serving.py", "line": 782, "rule": "R-LOG-001", "verdict": "F", "pattern": "RERAISE", "note": "except BaseException: server_close() + raise——清理重抛，治理后正确豁免"},
+    {"file": "utils.py", "line": 490, "rule": "R-ENG-001", "verdict": "?", "pattern": "OWN", "note": "文件对象返回给调用方接管（batch1 同判），所有权跨函数"},
+    {"file": "wrappers/request.py", "line": 494, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留（伴废弃参数清理）"}
+  ]
+}
