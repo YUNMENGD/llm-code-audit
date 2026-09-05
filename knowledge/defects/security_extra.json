@@ -123,6 +123,7 @@
       "tags": ["idor", "bypass", "object", "reference", "ownership"],
       "triggers": ["user_id", "order_id", "doc_id", "request.args", "request.path", "filter_by", "session.get("],
       "pattern": "直接用外部传入的资源 ID 查询/修改对象，未校验该对象归属当前用户。",
+      "require_any_in": ["request", "session", "current_user", "login", "token", "g.user"],
       "impact": "改一个 ID 越权访问他人全部数据。",
       "fix": "查询加所有权约束（WHERE id=? AND owner_id=?）；或在取回对象后校验 owner==current_user 再操作；优先用不可枚举 UUID。",
       "source": "https://cwe.mitre.org/data/definitions/639.html ; OWASP A01:2021"
