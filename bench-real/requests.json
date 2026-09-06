@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "lib": "requests",
+    "source": "https://github.com/psf/requests",
+    "clone": "git clone --depth 1 https://github.com/psf/requests.git realtest/requests",
+    "pkg_subpath": "src/requests",
+    "annotated_at": "2026-09-06",
+    "baseline": "治理链(E/noqa/F1/RES/RERAISE/NAME)全开后静态扫描全量 12 条（机器核对行号），逐处读上下文人工核验；TODO 类按注释真实性判 T(low)",
+    "verdict_legend": "T=真缺陷(含低价值属实) / F=误报 / ?=可辩护存疑",
+    "note": "requests 三条 SEC-007 均带 usedforsecurity=False —— HTTP Digest 认证协议的规范哈希，官方声明非安全用途（模式 G：协议规定哈希）"
+  },
+  "annotations": [
+    {"file": "_types.py", "line": 60, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "_types.py", "line": 61, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "adapters.py", "line": 715, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "auth.py", "line": 179, "rule": "R-SEC-007", "verdict": "F", "pattern": "G", "note": "md5(x, usedforsecurity=False)——Digest 认证协议规定算法+官方豁免声明；G-HASH-PURPOSE 词表未含此关键词(治理待补)"},
+    {"file": "auth.py", "line": 187, "rule": "R-SEC-007", "verdict": "F", "pattern": "G", "note": "同上，sha1 usedforsecurity=False"},
+    {"file": "auth.py", "line": 213, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "auth.py", "line": 237, "rule": "R-SEC-007", "verdict": "F", "pattern": "G", "note": "cnonce 随机盐值，RFC 7616 协议要求"},
+    {"file": "auth.py", "line": 247, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "auth.py", "line": 252, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "hooks.py", "line": 29, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "models.py", "line": 687, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"},
+    {"file": "models.py", "line": 1016, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真 TODO 滞留(low)"}
+  ]
+}

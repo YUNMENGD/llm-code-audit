@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "lib": "botocore",
+    "source": "https://github.com/boto/botocore",
+    "clone": "git clone --depth 1 https://github.com/boto/botocore.git realtest/botocore",
+    "pkg_subpath": "botocore",
+    "annotated_at": "2026-09-06",
+    "baseline": "治理链全开后静态扫描全量 23 条（机器核对行号），非 TODO 8 条逐处读上下文核验；TODO 类判 T(low)",
+    "verdict_legend": "T=真缺陷(含低价值属实) / F=误报 / ?=可辩护存疑",
+    "note": "G 模式=协议规定/官方声明非安全用途哈希（usedforsecurity=False、cache key）；静态层按设计不过滤 G（高召回网），由 LLM 层定级——本库 G 类 4 条是 LLM 考题"
+  },
+  "annotations": [
+    {"file": "auth.py", "line": 253, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "client.py", "line": 99, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "client.py", "line": 685, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "client.py", "line": 763, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "compat.py", "line": 146, "rule": "R-SEC-007", "verdict": "F", "pattern": "G", "note": "hashlib.md5(usedforsecurity=False)——FIPS 可用性探测，注释自证；G-HASH-PURPOSE requires 词未含 usedforsecurity（治理候选）"},
+    {"file": "compat.py", "line": 162, "rule": "R-SEC-007", "verdict": "F", "pattern": "G", "note": "md5 工厂函数透传，实际用途 S3 ETag 校验和"},
+    {"file": "configprovider.py", "line": 640, "rule": "R-LOG-001", "verdict": "?", "pattern": "F1", "note": "IMDS region 探测失败 pass——有后续 None 分支兜底，但无日志（业务代码里这种 pass 该提醒）"},
+    {"file": "credentials.py", "line": 2073, "rule": "R-SEC-006", "verdict": "F", "pattern": "H", "note": "ENV_VAR_AUTH_TOKEN='AWS_CONTAINER_AUTHORIZATION_TOKEN' 右值是环境变量名不是凭据。guards 的 G-ENVNAME-ONLY 按设计只抑制 LLM 告警，静态命中保留（高召回网）——本条是 LLM 层考题"},
+    {"file": "discovery.py", "line": 277, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "endpoint.py", "line": 176, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "except 后 logger.debug(exc_info=True)——记录后继续，非静默"},
+    {"file": "endpoint.py", "line": 349, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "handlers.py", "line": 1002, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "history.py", "line": 43, "rule": "R-LOG-001", "verdict": "F", "pattern": "F1", "note": "注释自证意图+logger.debug——采集器不得让进程死，兜底日志齐全"},
+    {"file": "response.py", "line": 100, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "response.py", "line": 117, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "response.py", "line": 201, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "retries/special.py", "line": 17, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "retries/standard.py", "line": 208, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "retryhandler.py", "line": 157, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "serialize.py", "line": 93, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "utils.py", "line": 2342, "rule": "R-ENG-002", "verdict": "T", "pattern": "TODO", "note": "真滞留(low)"},
+    {"file": "utils.py", "line": 3402, "rule": "R-SEC-007", "verdict": "F", "pattern": "G", "note": "_generate_cache_key 内 sha1 生成缓存键——G-HASH-PURPOSE 文件级 requires 命中 cache 但静态层设计上不被抑制（高召回网，LLM 定级）"},
+    {"file": "vendored/six.py", "line": 735, "rule": "R-SEC-003", "verdict": "F", "pattern": "A", "note": "vendored six 兼容技巧 exec(常量字面串)，无外部输入；第三方 vendored 目录宜整目录豁免（治理候选）"}
+  ]
+}

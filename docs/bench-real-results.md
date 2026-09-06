@@ -1,4 +1,4 @@
-# 真实开源库基准结果（bench-real · click+werkzeug+flask 三库，2026-09-06）
+# 真实开源库基准结果（bench-real · 五库 80 条 ground truth，2026-09-06）
 
 > ⚠️ **勘误在先**：我曾宣称"click 治理后 precision=1.000、消除 17 条误报"——那是跑
 > `real-eval` 之前按标注文档"预期收益"写的**未验证推算**，实测是 precision 0.100、
@@ -11,9 +11,9 @@
 - **原理**：对"治理前基线"的逐行人工判定（ground truth），把**当前**静态扫描结果
   逐条比对，输出：precision 前后、按误报模式的消除统计、**真缺陷误杀检测（lost_T）**、
   基线外新增告警
-- **ground truth 位置**：`bench-real/click.json`（18 条）+ `bench-real/werkzeug.json`
-  （22 条），逐行 T/F/? 与判定依据；出处 `docs/bench-annotations-batch1/2.md` 的
-  逐处源码核验 + 本次 werkzeug 全量导出复核
+- **ground truth 位置**：`bench-real/{click,werkzeug,flask,requests,botocore}.json`
+  （80 条），逐行 T/F/? 与判定依据；出处 `docs/bench-annotations-batch1/2.md` +
+  本次 requests/botocore 机器行号核对（首版凭记忆写行号被当场纠错，教训同勘误节）
 - **为什么真实库只能测 precision**：真缺陷无法穷举标注（没人能断言 click 没有未知
   缺陷），recall 的分母不存在。合成基准管 recall（保下限）、真实基准管 precision
   （保上限），两把尺子各司其职——这是双基准设计的核心论据
@@ -54,25 +54,41 @@ flask 治理前逐行清单未完整留档（探针实验只有聚合数 8→6�
 意图）+ 2 条存疑（PYTHONSTARTUP eval、_lazy_sha1 签名）。这 5 条正是留给 LLM 语义层
 的考题：下一步接 AI 评测（需额度，暂缓）时，flask 考"AI 能否把这 3 条 A 判成误报"。
 
-### 三库汇总（45 条 ground truth）
+### 五库汇总（80 条 ground truth，全部机器核对行号）
 
 | 库 | GT | 基线 P | 治理后 P | 消除误报 | 误杀 |
 |---|---|---|---|---|---|
 | click | 18 | 0.056 | 0.100 | 8（F1×5 RES×2 F2×1） | 0 |
 | werkzeug | 22 | 0.158 | 0.300 | 9（NAME×6 RES×1 F1×1 RERAISE×1） | 0 |
-| flask | 5 | —（残留基线） | 0.0 | 0（无治理前清单） | 0 |
+| flask | 5 | —（残留基线） | 0.0 | 0 | 0 |
+| requests | 12 | 0.750 | 0.750 | 0（3 条 G 类，静态高召回网保留） | 0 |
+| botocore | 23 | 0.682 | 0.682 | 0（7 条 G/H/A 类同上） | 0 |
 
-## 3. 残留（click 9 + werkzeug 7）：确定性层的"设计天花板"，不是治理失败
+**口径诚实声明（论文必写）**：precision 对类目构成极敏感——requests/botocore 的 T 高
+纯因 **TODO 滞留多**（9/12、15/23 是 TODO，命中即属实）；click/werkzeug 缺陷几乎被
+误报淹没。**同权重混算会掩盖真实难度**，正式指标表按类目分层报告；安全/逻辑类
+precision（click 0.10、wz 0.30）才是治理水平的硬指标，TODO 类是"建议级"另列。
+
+**标注副产品（新误报模式，均已入 bench 不硬治）**：
+- **G 模式·官方声明非安全用途哈希**：requests/botocore 共 6 条 `md5/sha1(..., usedforsecurity=False)`——
+  Python 官方豁免参数（Digest 认证/S3 ETag/FIPS 探测）。guards 只抑制 LLM 告警，静态命中按
+  设计保留（高召回网）；G-HASH-PURPOSE 词表补 `usedforsecurity` 可作为 LLM 侧定级参考
+- **H 模式·环境变量名 vs 凭据值**：botocore `ENV_VAR_AUTH_TOKEN='AWS_...'`（右值是变量名）——
+  G-ENVNAME-ONLY 已在 LLM 侧覆盖
+- **vendored 目录**：six.py 的 exec 兼容技巧属第三方代码，real-eval 排除集候选（非规则改动）
+
+## 3. 残留（click 9 + werkzeug 7 + requests 3 + botocore 8）：确定性层的"设计天花板"，不是治理失败
 
 | 形态 | 条数 | 为何保留（有意为之） |
 |---|---|---|
 | `except Exception: pass`（清理/兜底语境） | click 7 + wz 5 | "静默吞异常"是申报书声明的目标缺陷类；bandit 亦作独立低危项（B110）。作者意图应由 `# noqa` 显式声明，工具不替人猜 |
 | 嵌套 `try:` 探测 / 调用式降级 `return fallback_repr()` | 2+1 | probe 白名单不穿透嵌套、不豁免函数调用式降级（再扩就要猜语义了） |
 | 跨函数资源所有权（?） | wz 2 | open 句柄返回给调用方关闭，静态层无数据流可判，LLM 层职责 |
+| G/H/A 类官方声明哈希、协议规定、文档承诺机制 | requests 3 + botocore 8 | **静态"宁报不压制"政策**：这类需要读上下文/协议知识才能判，正是 LLM 层存在的意义 |
 
 **政策分叉维持不放宽**：若豁免"except Exception: pass"，click FP 预期 9→2，但业务代码里
-真有吞写盘失败的形态会被一起放掉——放掉即真实漏报。这类留给 LLM 语义层，
-"静态高召回线索网 → LLM 定级"的架构分工正是靠这批残留数据论证的。
+真有吞写盘失败的形态会被一起放掉——放掉即真实漏报。**全部四库 27 条残留本质都是
+"LLM 语义定级层的输入题"**——这批 ground truth 就是下一步 AI 对照实验的考卷。
 
 ## 4. 复用与扩展
 
@@ -82,7 +98,8 @@ git clone --depth 1 https://github.com/pallets/click.git realtest/click
 python -m codeaudit real-eval click      # 不带参数 = 评测 bench-real/ 全部已标库
 ```
 
-扩展路线：~~werkzeug~~（已入库）→ flask（real-ai-probe 实验的 12 条核验表转
-manifest，但那份基线含 NAME 修正前数据，转写时先重扫）→ requests/botocore
-（待逐行标注）→ trio（batch1 里 TODO 是聚合行，需逐行重拆后才能进机器化
-ground truth——聚合数字不进 bench-real，宁缺毋滥）。
+已入库五库（80 条）。下一步：① **trio**——batch1 里 TODO 是聚合行，需逐行重拆
+才能进机器化 ground truth（聚合数字不进 bench-real，宁缺毋滥）；② **AI 对照实验**——
+以本文件第 3 节的 27 条残留（G/H/A/所有权）+ flask 5 条为考卷，跑"纯静态 vs
+静态+LLM 定级"两组，用同一把 real-eval 尺子出数——这是论文第 3 章的核心表格，
+需要一小笔额度（估算 3~5 万 token）。

@@ -486,6 +486,8 @@ check("werkzeug ground truth 可加载", len(RE.load_gt("werkzeug")["annotations
 check("flask ground truth 可加载", len(RE.load_gt("flask")["annotations"]) == 5)
 check("flask 为残留基线口径(无T)", all(a["verdict"] != "T"
       for a in RE.load_gt("flask")["annotations"]))
+check("requests ground truth 可加载", len(RE.load_gt("requests")["annotations"]) == 12)
+check("botocore ground truth 可加载", len(RE.load_gt("botocore")["annotations"]) == 23)
 
 print("\n[18] NAME：eval/exec 方法名撞车豁免（R-SEC-003 收紧）")
 check("真exec调用仍报", _hit("exec(code, self.locals)", "R-SEC-003"))
