@@ -27,9 +27,10 @@ from codeaudit import report as RP
 from codeaudit import rules as RL
 from codeaudit.audit import audit_path
 from codeaudit.llm import LLMClient
+from codeaudit.paths import WEB_DIR
 from codeaudit.retriever import load_knowledge
 
-BASE = Path(__file__).resolve().parent
+BASE = WEB_DIR
 app = FastAPI(title="LLM Code Audit", docs_url=None, redoc_url=None)
 
 _jobs: dict[str, dict] = {}
@@ -109,7 +110,7 @@ def _run_job(job_id: str, req: AuditReq) -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return (BASE / "web" / "index.html").read_text(encoding="utf-8")
+    return (BASE / "index.html").read_text(encoding="utf-8")
 
 
 @app.get("/api/check")
