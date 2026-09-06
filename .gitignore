@@ -21,6 +21,13 @@ reports/
 chroma/
 faiss_index/
 
+# 打包产物（绿色版）
+build/
+dist/
+*.spec
+selftest_result.txt
+selftest_sample.py
+
 # 编辑器 / 系统
 .vscode/
 .idea/
