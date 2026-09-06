@@ -15,8 +15,9 @@ import threading
 import time
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-CACHE_FILE = _ROOT / "data" / "cache" / "audit_cache.json"
+from .paths import DATA_DIR
+
+CACHE_FILE = DATA_DIR / "cache" / "audit_cache.json"
 _MAX_ENTRIES = 4000
 _PRUNE_TO = 3000
 

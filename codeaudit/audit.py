@@ -22,8 +22,9 @@ from . import validate as V
 from .examples import examples_enabled, format_examples
 from .llm import LLMClient, LLMError, extract_json_array
 from .models import AuditReport, CodeUnit, Issue
+from .paths import PROMPTS_DIR
 
-PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
+PROMPT_DIR = PROMPTS_DIR
 
 
 def load_prompt(name: str) -> str:

@@ -14,8 +14,9 @@ import re
 from pathlib import Path
 
 from .models import Category, Issue, Severity
+from .paths import RULES_DIR as _RD
 
-RULES_DIR = Path(__file__).resolve().parent.parent / "knowledge" / "rules"
+RULES_DIR = _RD
 GUARDS_FILE = RULES_DIR / "guards.json"
 
 # 通用抑制惯例（bandit/ruff/pylint 生态共识）：作者显式标记"我知道，故意的"。

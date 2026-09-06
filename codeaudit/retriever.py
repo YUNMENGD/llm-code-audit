@@ -14,8 +14,10 @@ import re
 import threading
 from pathlib import Path
 
-KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge" / "defects"
-DATA_VEC = Path(__file__).resolve().parent.parent / "data" / "vec"
+from .paths import DATA_DIR, KNOWLEDGE_DIR as _KD
+
+KNOWLEDGE_DIR = _KD
+DATA_VEC = DATA_DIR / "vec"
 
 # 并发审计时，知识库向量矩阵只允许一个线程构建，其余等待复用
 _KB_LOCK = threading.Lock()

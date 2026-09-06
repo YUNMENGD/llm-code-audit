@@ -14,7 +14,11 @@ import urllib.request
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from .paths import ROOT as _ROOT
+
+_env = _ROOT / ".env"
+if _env.exists():
+    load_dotenv(_env, override=False)
 
 
 class LLMError(RuntimeError):
