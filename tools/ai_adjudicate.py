@@ -42,7 +42,16 @@ MODEL = "qwen-plus"
 SYSTEM = ("你是资深代码安全审计复核员。静态扫描规则报出一条告警，"
           "你根据代码上下文判断它是否为【该规则语义下的真实问题】。"
           "多数告警在成熟库里可能是误报，但不得因『大项目都这么写』而放松；"
-          "判定要基于数据流与威胁模型，不基于猜测。只输出一个 JSON 对象。")
+          "判定要基于数据流与威胁模型，不基于猜测。"
+          "判定前先核对以下三条事实，建立在违背事实的理由上的判定不成立："
+          "① except Exception 不捕获 KeyboardInterrupt/SystemExit（它们是"
+          "BaseException 直接子类），评估吞异常危害时不得把这类中断算进去；"
+          "② 被协议或标准强制规定的哈希算法（如 HTTP Digest 规定 MD5/SHA1）"
+          "不是缺陷，usedforsecurity=False 即非安全用途的官方声明，不得以"
+          "算法过旧为由保留或建议升级；"
+          "③ 调用方显式传入的配置文件内容与 vendored 第三方兼容代码不属于"
+          "不可信攻击输入，除非有不可信数据实际流向 exec/eval，不得判 RCE。"
+          "只输出一个 JSON 对象。")
 
 USER_TPL = """# 规则
 [{rule_id}] {title}
@@ -76,7 +85,7 @@ def adjudicate(client: LLMClient, rule: dict, fname: str, line: int,
     prompt = USER_TPL.format(
         rule_id=rule["id"], title=rule["title"], why=rule.get("why", ""),
         fname=fname, line=line, evidence=evidence[:120], context=context)
-    key = C.cache_key(prompt, client.model)
+    key = C.cache_key(SYSTEM + "\x00" + prompt, client.model)
     hit = C.get(key)
     if hit is None:
         raw = client.chat([{"role": "system", "content": SYSTEM},
