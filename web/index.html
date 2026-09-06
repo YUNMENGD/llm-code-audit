@@ -81,8 +81,8 @@
     <div id="errbox"></div>
     <div id="stats" style="display:none"></div>
     <div class="tabs" id="tabs" style="display:none">
-      <button class="sel" data-t="html">报告视图</button>
-      <button data-t="md">Markdown 原文</button>
+      <button class="sel" data-v="html">报告视图</button>
+      <button data-v="md">Markdown 原文</button>
     </div>
     <iframe id="frame" style="display:none"></iframe>
     <div id="md"></div>
@@ -175,7 +175,7 @@ async function render(id) {
   $("#stats").style.display = "flex"; $("#tabs").style.display = "flex";
   $("#frame").style.setProperty("display", "block", "important");
   $("#md").style.setProperty("display", "none", "important");
-  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.t === "html"));
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.v === "html"));
   $("#stats").innerHTML =
     `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
     `<span class="chip" style="color:#d05c5c">严重 <b>${sec}</b></span>` +
