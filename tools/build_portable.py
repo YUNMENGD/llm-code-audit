@@ -68,7 +68,9 @@ def main() -> None:
         "   改完重启 exe 即生效，无需重新打包\r\n"
         "5. 疑似误报可在代码行尾加  # noqa  或  # nosec  豁免\r\n"
         "6. 出问题先跑：CodeAudit.exe --selftest，看 selftest_result.txt\r\n\r\n"
-        "若 Windows 弹「未知发布者」：更多选择 → 仍要运行（团队绿色版未做代码签名）\r\n",
+        "若 Windows 弹「未知发布者」：更多选择 → 仍要运行（团队绿色版未做代码签名）\r\n\r\n"
+        "⚠ 分发提醒：若本文件夹已放 .env（含密钥），拷给别人前必须删掉 .env，\r\n"
+        "   或只拷 exe + _internal + knowledge + prompts + web，让对方各自建 .env\r\n",
         encoding="utf-8")
 
     size_mb = sum(f.stat().st_size for f in OUT.rglob("*")) / 1e6
