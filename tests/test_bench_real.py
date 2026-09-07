@@ -33,6 +33,7 @@ FROZEN = {
     "click":      {"precision": 0.1,   "kept_T": 1},
     "flask":      {"precision": 0.0,   "kept_T": 0},
     "requests":   {"precision": 1.0,   "kept_T": 9},
+    "trio":       {"precision": 0.935, "kept_T": 29},
     "werkzeug":   {"precision": 0.333, "kept_T": 3},
 }
 

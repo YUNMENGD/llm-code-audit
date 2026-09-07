@@ -24,7 +24,7 @@ _REALTEST = _ROOT.parent / "realtest"
 _BENCH = _ROOT / "bench-real"
 _EXCLUDE = {"tests", "test", "_tests", "testing", "docs", "doc", "_vendor",
             ".venv", "scripts", "example", "examples", "build", "dist"}
-LIBS = ["botocore", "click", "flask", "requests", "werkzeug"]
+LIBS = ["botocore", "click", "flask", "requests", "trio", "werkzeug"]
 
 
 def load_gt(lib: str) -> dict | None:

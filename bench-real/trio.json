@@ -1,0 +1,388 @@
+{
+  "meta": {
+    "lib": "trio",
+    "source": "https://github.com/python-trio/trio",
+    "clone": "git clone --depth 1 https://github.com/python-trio/trio.git realtest/trio",
+    "scope": "src/trio 主包（tests/docs/_tests 除外）",
+    "method": "治理前告警 45 条逐处打开源码上下文人工判定（2026-09-07）",
+    "baseline": "治理前=原始 pattern 命中（不含 noqa/重抛/探测/记录豁免）：R-LOG-001×13、R-LOG-003×1、R-SEC-004×1、R-ENG-001×1、R-ENG-002×29",
+    "annotated_at": "2026-09-07",
+    "verdicts": {
+      "T": "真缺陷(应报)",
+      "F": "误报",
+      "?": "可辩护建议/存疑(不计P分母)"
+    },
+    "patterns": {
+      "A": "设计特性/自有信任边界当漏洞",
+      "F1": "探测/降级惯用法",
+      "RERAISE": "清理后重抛",
+      "LOG": "捕获+记录+降级(非吞)",
+      "NOQA": "作者显式标记",
+      "COMMENT": "行尾注释文本误撞代码特征",
+      "TODO": "真滞留注释(缺陷)"
+    },
+    "note": "trio 无 SEC/LOG 真缺陷——异步运行时标杆库的宽捕获全部是『清理+raise』『捕获+logger.exception+降级』两类正确惯用法，13/13 判 F；新增 COMMENT 模式（R-LOG-003 的 `is 2` 命中行尾注释文本 need is 2 iterations）是六库标注首次发现的未治理形态。"
+  },
+  "annotations": [
+    {
+      "file": "_core/_asyncgens.py",
+      "line": 237,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "LOG",
+      "why": "except BaseException 后 ASYNCGEN_LOGGER.exception(...) 完整记录+注释说明降级语义，非吞掉；shield 设计意图明确"
+    },
+    {
+      "file": "_core/_instrumentation.py",
+      "line": 68,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "except: remove_instrument(instrument); raise——清理后重抛，异常传播未断，注册失败必须炸出来"
+    },
+    {
+      "file": "_core/_instrumentation.py",
+      "line": 110,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "LOG",
+      "why": "except BaseException 后移除该 instrument 并 INSTRUMENT_LOGGER.exception(...) 记录——第三方探针坏掉不拖垮内核，有完整可观测性"
+    },
+    {
+      "file": "_core/_run.py",
+      "line": 2667,
+      "rule": "R-LOG-003",
+      "verdict": "F",
+      "pattern": "COMMENT",
+      "why": "误撞行尾注释文本：'expected need is 2 iterations' 里的 is 2 命中 `is+数字` 模式；代码本体 for _tick in range(5) 与 is 比较无关。新发现模式"
+    },
+    {
+      "file": "_core/_thread_cache.py",
+      "line": 68,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "F1",
+      "why": "ctypes.CDLL 探测失败 return None 能力降级；注释引用 issue 2688 说明故意宽捕获（治理后被 except_probe 豁免）"
+    },
+    {
+      "file": "_highlevel_open_tcp_listeners.py",
+      "line": 151,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "except: sock.close(); raise——绑定失败先关 socket 再重抛，资源清理+传播教科书写法"
+    },
+    {
+      "file": "_highlevel_open_tcp_listeners.py",
+      "line": 154,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "同上，外层 except 清理已建 listeners 的 socket 后 raise"
+    },
+    {
+      "file": "_highlevel_open_unix_stream.py",
+      "line": 33,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "close_on_error 上下文管理器：yield 出异常则 obj.close() 后 raise，就是给清理+重抛设计的"
+    },
+    {
+      "file": "_ssl.py",
+      "line": 606,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "send_all 失败置 _State.BROKEN 后 raise，注释解释'data got sent, we don't know how much, stream is doomed'——状态机降级+传播"
+    },
+    {
+      "file": "_ssl.py",
+      "line": 643,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "握手失败置 BROKEN 后 raise，同上"
+    },
+    {
+      "file": "_ssl.py",
+      "line": 859,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "shutdown 失败 aclose_forcefully 强关后 raise；else 分支还处理了干净路径"
+    },
+    {
+      "file": "_subprocess.py",
+      "line": 758,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "run_process 失败进 shielded killer 杀子进程后重抛——不杀子进程才是泄漏，这里传播与资源两头都管"
+    },
+    {
+      "file": "_subprocess.py",
+      "line": 190,
+      "rule": "R-ENG-001",
+      "verdict": "F",
+      "pattern": "NOQA",
+      "why": "open(fd) 包 pidfd，作者同行标 # noqa: SIM115 显式声明生命周期由自己管"
+    },
+    {
+      "file": "_sync.py",
+      "line": 838,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "Condition.wait park 失败：shield 内先 acquire 恢复锁状态再 raise——防死锁的清理+重抛"
+    },
+    {
+      "file": "_threads.py",
+      "line": 427,
+      "rule": "R-LOG-001",
+      "verdict": "F",
+      "pattern": "RERAISE",
+      "why": "起线程失败 release_on_behalf_of 归还限额后 raise"
+    },
+    {
+      "file": "_tools/mypy_annotate.py",
+      "line": 103,
+      "rule": "R-SEC-004",
+      "verdict": "F",
+      "pattern": "A",
+      "why": "pickle.load 输入是 mypy 插件流水线自己上一步 dump 的中间文件（CI 注解工具）；信任边界=构建目录自有产物。静态无此证据故仍报，属合理残留"
+    },
+    {
+      "file": "_channel.py",
+      "line": 626,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_channel.py",
+      "line": 632,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_entry_queue.py",
+      "line": 78,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)，'gross hack' 自述欠账"
+    },
+    {
+      "file": "_core/_io_kqueue.py",
+      "line": 82,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_io_kqueue.py",
+      "line": 94,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_io_kqueue.py",
+      "line": 99,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_io_kqueue.py",
+      "line": 163,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_io_windows.py",
+      "line": 853,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_io_windows.py",
+      "line": 855,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_io_windows.py",
+      "line": 902,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_run.py",
+      "line": 2923,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_run.py",
+      "line": 2930,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_core/_windows_cffi.py",
+      "line": 298,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_dtls.py",
+      "line": 56,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_dtls.py",
+      "line": 220,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_dtls.py",
+      "line": 421,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_dtls.py",
+      "line": 428,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_dtls.py",
+      "line": 1026,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_dtls.py",
+      "line": 1313,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_highlevel_socket.py",
+      "line": 163,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_repl.py",
+      "line": 28,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_repl.py",
+      "line": 78,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_repl.py",
+      "line": 100,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_repl.py",
+      "line": 113,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_repl.py",
+      "line": 117,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_subprocess.py",
+      "line": 373,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_subprocess.py",
+      "line": 1122,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_tools/gen_exports.py",
+      "line": 294,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    },
+    {
+      "file": "_util.py",
+      "line": 123,
+      "rule": "R-ENG-002",
+      "verdict": "T",
+      "pattern": "TODO",
+      "why": "真 TODO 滞留(low)"
+    }
+  ]
+}

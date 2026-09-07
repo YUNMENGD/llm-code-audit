@@ -133,6 +133,7 @@ _VAR_ASSIGN = re.compile(r"^\s*(\w+)\s*=\s*(?:[^\n]*\b(?:open|connect)\s*\()")
 
 _LOG_CALL = re.compile(
     r"\b(?:logger|logging|log|self\.log)\s*\.\s*(?:debug|info|warning|warn|error|exception|critical)\s*\("
+    r"|\b[A-Z][A-Z0-9_]*_?LOGGER\b\s*\.\s*\w+\s*\("   # trio 惯例：ASYNCGEN_LOGGER.exception(...)
     r"|\bwarnings\s*\.\s*warn(?:ing)?\s*\("
     r"|\btraceback\s*\.\s*print"
     r"|\.showtraceback\s*\("
