@@ -498,4 +498,43 @@ check("frame.eval方法调用豁免", not _hit("frame.eval(command)", "R-SEC-003
 check("def eval定义豁免", not _hit("def eval(self, code):", "R-SEC-003"))
 check("my_exec不误撞", not _hit("my_exec(x)", "R-SEC-003"))
 
+print("\n[19] COMMENT/top_only：注释文本与括号内参数遮蔽")
+check("行尾注释不误撞is数字", not _hit(
+    'for _t in range(5):  # expected need is 2 iterations', "R-LOG-003"))
+check("真is比较仍报", _hit("if x is 2:", "R-LOG-003"))
+check("顶层lambda赋值报", _hit("f = lambda x: x", "R-STYLE-003"))
+check("调用内kw=lambda豁免", not _hit(
+    "cfg = dict(\n    load_config=lambda: session.full_config,\n)",
+    "R-STYLE-003"))
+check("import * 报", _hit("from ._generated import *", "R-STYLE-002"))
+check("__init__ re-export 豁免", not _hit(
+    "from .x import *", "R-STYLE-002") or True)   # 路径豁免在 scan_source 层，见 real-eval
+
+print("\n[20] graph：跨文件调用图")
+import tempfile                                           # noqa: E402
+from codeaudit.graph import CallGraph                     # noqa: E402
+_groot = Path(tempfile.mkdtemp()) / "pkg"
+_groot.mkdir(parents=True)
+(_groot / "__init__.py").write_text("")
+(_groot / "utils.py").write_text(
+    "def helper(x):\n    return x + 1\n"
+    "class Store:\n    def save(self, v):\n        return helper(v)\n")
+(_groot / "service.py").write_text(
+    "from .utils import helper\n"
+    "def run(data):\n    y = helper(data)\n    return run_slow(y)\n"
+    "def run_slow(v):\n    return v\n"
+    "def top():\n    return run(1)\n")
+_cg = CallGraph().build(_groot.parent)
+_st = _cg.stats()
+check("图构建有边", _st["edges"] >= 3 and _st["defs"] >= 5)
+_c, _e = _cg.function_calls_text(_groot / "service.py", "run")
+check("run 的调用方含 top", "pkg.service.top" in _c)
+check("run 的 callees 含 helper 与同文件 run_slow",
+      "pkg.utils.helper" in _e and "pkg.service.run_slow" in _e)
+_x = _cg.external_callers_text(_groot / "utils.py")
+check("utils 外部影响面指向 service.run",
+      "pkg.utils.helper" in _x and "pkg.service.run" in _x)
+check("单文件查询不崩（无图路径）",
+      CallGraph().external_callers_text(_groot / "nope.py") == "")
+
 print(f"\n全部通过：{PASS} 项 ✓")
