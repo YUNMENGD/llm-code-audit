@@ -224,6 +224,55 @@ def _docstring_mask(lines: list[str], source: str = "") -> list[bool]:
     return out
 
 
+def _paren_depths(source: str) -> dict[int, int]:
+    """行号 → 该行首 token 出现时的括号嵌套深度。
+
+    E731 只约束顶层 `f = lambda`；`foo(kw=lambda: ...)` 换行后行首同样是
+    kw=lambda 形态，靠深度>0 区分——botocore/werkzeug/flask/click 实证误报。
+    tokenize 失败返回 {}（视为全在顶层，宁报不误删）。
+    """
+    import io
+    import tokenize
+    depths: dict[int, int] = {}
+    depth = 0
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type in (tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE,
+                            tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER):
+                continue
+            if tok.start[0] not in depths:
+                depths[tok.start[0]] = depth       # 行首深度 = 该 token 前累计
+            if tok.type == tokenize.OP:
+                if tok.string in "([{":
+                    depth += 1
+                elif tok.string in ")]}":
+                    depth = max(0, depth - 1)
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return {}
+    return depths
+
+
+def _comment_cols(source: str) -> dict[int, int]:
+    """行号 → 该行行内注释（COMMENT token）的起始列。
+
+    模式 COMMENT：命中位置落在 `#` 之后即注释文本，不是代码。trio 实证——
+    `for _tick in range(5):  # expected need is 2 iterations` 的行尾注释里的
+    "is 2" 误撞 R-LOG-003 的 `is <数字>` 模式。tokenize 把整行注释（含独立
+    注释行与行尾注释）都标为 COMMENT token；独立注释行上游已跳过，这里
+    主要消费行尾注释。tokenize 失败返回 {}（视为无注释，宁可多报不误删）。
+    """
+    import io
+    import tokenize
+    cols: dict[int, int] = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type == tokenize.COMMENT:
+                cols[tok.start[0]] = tok.start[1]
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return {}
+    return cols
+
+
 def _string_spans(source: str) -> dict[int, list[tuple[int, int]]]:
     """行号 → 字符串文本 token 覆盖的列区间（模式 E：字符串内的敏感词）。
 
@@ -265,6 +314,8 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
     lines = source.splitlines()
     doc = _docstring_mask(lines, source)
     strspans = _string_spans(source)     # 模式E：字符串文案内的敏感词不算命中
+    cmts = _comment_cols(source)         # 模式COMMENT：行尾注释文本非代码
+    depths = _paren_depths(source) if any(r.get("top_only") for r in rules) else {}
     hits: list[Issue] = []
     for r in rules:
         if not r.get("pattern"):
@@ -292,6 +343,10 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
                 continue
             if any(a <= m.start() < b for a, b in strspans.get(i + 1, ())):
                 continue                 # 匹配起点在字符串文本内 → 文案非代码
+            if not match_comment and i + 1 in cmts and m.start() >= cmts[i + 1]:
+                continue                 # 模式COMMENT：命中在行尾注释里 → 文本非代码
+            if r.get("top_only") and depths.get(i + 1, 0) > 0:
+                continue                 # 跨行调用括号内的参数行不算顶层语句（E731 实证）
             if any(ex in ln for ex in r.get("exclude", [])):
                 continue
             if _SUPPRESS_RX.search(ln):

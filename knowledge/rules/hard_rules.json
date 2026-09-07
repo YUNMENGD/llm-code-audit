@@ -180,6 +180,41 @@
       "why": "Flask 等框架 debug 模式暴露交互式调试器与堆栈。",
       "impact": "远程代码执行与信息泄露。",
       "suggestion": "生产配置强制 debug=False，由环境变量控制。"
+    },
+    {
+      "id": "R-STYLE-001",
+      "title": "分号连接多条语句",
+      "category": "style",
+      "severity": "low",
+      "source": "PEP8 E702",
+      "pattern": "[^;#\\s];\\s*(?:if|for|while|import|return|print|assert|pass|raise)\\b",
+      "why": "一行塞多条语句降低可读性、干扰 diff/blame 定位（字符串/注释内的分号已被模式E/COMMENT 遮蔽）。",
+      "impact": "可维护性下降，代码审查易漏改。",
+      "suggestion": "拆为多行；同一逻辑块用缩进表达。"
+    },
+    {
+      "id": "R-STYLE-002",
+      "title": "通配导入 import *",
+      "category": "style",
+      "severity": "low",
+      "source": "PEP8 E403",
+      "pattern": "from\\s+[\\w.]+\\s+import\\s+\\*",
+      "skip_path_rx": "/?__init__\\.py$",
+      "why": "通配导入污染命名空间、静态工具失去符号溯源；__init__.py 中的 re-export 属惯用法已豁免。",
+      "impact": "命名冲突与来源不可追溯。",
+      "suggestion": "显式列出导入符号，或 import __all__ 变量。"
+    },
+    {
+      "id": "R-STYLE-003",
+      "title": "lambda 直接赋值命名",
+      "category": "style",
+      "severity": "low",
+      "source": "PEP8 E731",
+      "pattern": "^\\s*[A-Za-z_]\\w*\\s*=\\s*lambda\\b",
+      "top_only": true,
+      "why": "f = lambda x: ... 丢栈帧可读名且不可复用于文档；def 一行等价且可加 docstring。跨行调用的 kw=lambda 参数行（括号内）不属顶层赋值，已由 top_only 豁免（botocore/werkzeug/flask/click 实证）。",
+      "impact": "traceback 显示 <lambda> 定位困难。",
+      "suggestion": "改写为 def；仅作回调入参的匿名 lambda 不受此规则约束。"
     }
   ]
 }
