@@ -215,15 +215,26 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
     ctx = _context_block(unit)
     if chain:
         ctx = ctx + "\n" + chain
-    prompt = (tpl
-              .replace("{{language}}", "Python")
-              .replace("{{scope}}", f"{unit.kind}: {unit.name}")
-              .replace("{{context}}", ctx)
-              .replace("{{knowledge}}", R.format_for_prompt(hits))
-              .replace("{{hints}}", _hints_block(hints))
-              .replace("{{examples}}",
-                       format_examples(ex_kind) if use_examples else "")
-              .replace("{{code}}", unit.tagged()))
+    def _ask(p: str) -> str | None:
+        messages = [
+            {"role": "system", "content": "你是资深代码审计专家，只输出符合要求的 JSON，不输出任何解释文字。"},
+            {"role": "user", "content": p},
+        ]
+        return client.chat(messages)
+
+    def _build(know_text: str) -> str:
+        return (tpl
+                .replace("{{language}}", "Python")
+                .replace("{{scope}}", f"{unit.kind}: {unit.name}")
+                .replace("{{context}}", ctx)
+                .replace("{{knowledge}}", know_text)
+                .replace("{{hints}}", _hints_block(hints))
+                .replace("{{examples}}",
+                         format_examples(ex_kind) if use_examples else "")
+                .replace("{{code}}", unit.tagged()))
+
+    base_know = R.format_for_prompt(hits)
+    prompt = _build(base_know)
 
     key = C.cache_key(prompt, client.model) if use_cache else None
     raw: str | None = C.get(key) if key else None
@@ -232,13 +243,34 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
         hit = True
     else:
         hit = False if use_cache else None
-        messages = [
-            {"role": "system", "content": "你是资深代码审计专家，只输出符合要求的 JSON，不输出任何解释文字。"},
-            {"role": "user", "content": prompt},
-        ]
         try:
-            raw = client.chat(messages)
-            if key:
+            raw = _ask(prompt)
+            # —— Agentic RAG 逃生舱：模型申请补充证据 → 检索回填 → 重问（≤2 轮）。
+            # 兑现申报书"Agentic 式 RAG"：检索不再是单向注入，模型可决定查什么。
+            for _round in range(2):
+                needs = [i for i in extract_json_array(raw or "")
+                         if isinstance(i, dict)
+                         and i.get("type") == "NEED-EVIDENCE"][:2]
+                if not needs:
+                    break
+                extra: list[dict] = []
+                seen: set = {h.get("id") for h in hits}
+                for n in needs:
+                    for e in R.retrieve(str(n.get("query", "")), top_k=3,
+                                        items=knowledge, scope=unit.source):
+                        if e.get("id") not in seen:
+                            seen.add(e.get("id"))
+                            extra.append(e)
+                if not extra:
+                    break
+                print(f"  [agentic] {unit.name} 申请{len(needs)}项证据，"
+                      f"补充{len(extra)}条知识重问", flush=True)
+                raw = _ask(
+                    _build(base_know + "\n\n# 应你申请的补充检索（同样必须比对）\n"
+                           + R.format_for_prompt(extra))
+                    + "\n\n（上轮你申请了补充证据，已提供。请给出最终 JSON 数组，"
+                      "不要再输出 NEED-EVIDENCE。）")
+            if key and raw is not None:
                 C.put(key, raw, model=client.model)
         except LLMError as e:
             print(f"[warn] 模型调用失败({unit.path}): {e}")
@@ -248,6 +280,8 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
     for item in extract_json_array(raw or ""):
         if not isinstance(item, dict):
             continue
+        if item.get("type") == "NEED-EVIDENCE":
+            continue                         # 申请对象不是问题，不计入
         issue = Issue.from_dict(item, path=unit.path, detector="llm",
                                  model=client.model)
         ok, reason = V.check_with_rules(issue, source_lines)

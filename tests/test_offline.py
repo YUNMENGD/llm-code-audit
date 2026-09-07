@@ -537,4 +537,45 @@ check("utils 外部影响面指向 service.run",
 check("单文件查询不崩（无图路径）",
       CallGraph().external_callers_text(_groot / "nope.py") == "")
 
+print("\n[21] agentic RAG：NEED-EVIDENCE 申请→回填→重问闭环")
+from codeaudit.audit import _audit_unit                     # noqa: E402
+from codeaudit.models import CodeUnit                       # noqa: E402
+
+
+class _FakeClient:
+    model = "fake-model"
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.prompts: list[str] = []
+
+    def chat(self, messages):
+        self.p = messages[1]["content"]
+        self.prompts.append(self.p)
+        return self.replies.pop(0) if self.replies else "[]"
+
+
+_fc = _FakeClient([
+    '[{"type":"NEED-EVIDENCE","query":"SQL 注入 参数化"}]',
+    '[{"rule_id":"CWE-89","category":"security","severity":"high",'
+    '"title":"拼接SQL","line_start":1,"line_end":1,"function_name":null,'
+    '"evidence":"cur.execute(\\"select \\" + q)","analysis":"a","impact":"i",'
+    '"fix":"f","confidence":0.9}]',
+])
+_unit = CodeUnit(kind="file", name="t", path="t.py",
+                 source='cur.execute("select " + q)\n',
+                 line_start=1, line_end=1, context={"imports": ["sqlite3"]})
+_found, _hitflag = _audit_unit(
+    _fc, _unit, _unit.source.splitlines(), RL.load_rules(),
+    RT.load_knowledge(), use_examples=False, use_cache=False)
+check("申请触发二次调用", len(_fc.prompts) == 2)
+check("第二轮 prompt 含补充检索段", "应你申请的补充检索" in _fc.prompts[1])
+check("NEED-EVIDENCE 不计入问题", len(_found) == 1)
+check("正常问题保留", _found[0].rule_id == "CWE-89")
+_fc2 = _FakeClient(['[{"rule_id":"x","title":"y","evidence":"cur.execute(\\"select \\" + q)","confidence":0.9}]'])
+_found2, _ = _audit_unit(_fc2, _unit, _unit.source.splitlines(),
+                         RL.load_rules(), RT.load_knowledge(),
+                         use_examples=False, use_cache=False)
+check("无申请时单次调用（行为不变）", len(_fc2.prompts) == 1)
+
 print(f"\n全部通过：{PASS} 项 ✓")
