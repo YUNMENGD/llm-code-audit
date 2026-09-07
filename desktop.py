@@ -90,6 +90,33 @@ def _selftest(port: int) -> int:
             if n < 1:
                 ok = False
                 lines.append("已知缺陷样例应至少报 1 条")
+
+        # AI 深度审计端到端（仅在 .env 配置了密钥时跑真实调用——验证冻结态下
+        # .env 加载、调用图构建、LLM 请求全链路；无密钥环境 SKIP 不算失败）
+        if c["llm_ready"]:
+            jid2 = _post(url + "/api/audit",
+                         {"target": str(sample), "mode": "ai",
+                          "depth": "file"})["job_id"]
+            st2: dict = {}
+            for _ in range(150):
+                time.sleep(0.8)
+                st2 = _get(f"{url}/api/job/{jid2}")
+                if st2["status"] != "running":
+                    break
+            if st2.get("status") != "done":
+                ok = False
+                lines.append(f"AI 审计未完成：{st2}")
+            else:
+                res2 = _get(f"{url}/api/result/{jid2}")
+                n2 = res2["stats"]["total"]
+                eng = res2.get("engine") or {}
+                lines.append(f"AI 审计 → 问题{n2}条 模型={eng.get('model')}"
+                             f" 调用图边数={eng.get('callgraph', {}).get('edges', 0)}")
+                if n2 < 1:
+                    ok = False
+                    lines.append("AI 模式对已知缺陷样例应至少报 1 条")
+        else:
+            lines.append("AI 审计 → SKIP（未配置 LLM_API_KEY）")
     except Exception as e:                        # noqa: BLE001
         ok = False
         lines.append(f"{type(e).__name__}: {e}")

@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import cache as C
+from . import graph as G
 from . import parser as P
 from . import retriever as R
 from . import rules as RL
@@ -67,6 +68,21 @@ def audit_path(target: str | Path, depth: str = "file",
         p for p in target.rglob("*.py")
         if not any(part in P.IGNORE_DIRS for part in p.parts))
 
+    # 跨文件调用图（申报书"函数调用链/跨文件依赖"）：纯 AST 零成本，仅 LLM
+    # 审计时构建；失败不拉闸审计（graph=None 时 Prompt 上下文自动缺省）。
+    call_graph = None
+    if (do_cross or client.available()) and target.is_dir() \
+            and os.getenv("AUDIT_CALLGRAPH", "1") == "1":
+        try:
+            t0 = time.time()
+            call_graph = G.CallGraph().build(target, files)
+            engine["callgraph"] = {**call_graph.stats(),
+                                   "build_sec": round(time.time() - t0, 2)}
+            print(f"[graph] 调用图 {call_graph.stats()} "
+                  f"({engine['callgraph']['build_sec']}s)", flush=True)
+        except Exception as e:                        # noqa: BLE001
+            print(f"[warn] 调用图构建失败，降级为无链上下文: {e}", flush=True)
+
     n_files = len(files)
     guards = RL.load_guards()
     coverage_by_path: dict[str, dict] = {}
@@ -99,7 +115,8 @@ def audit_path(target: str | Path, depth: str = "file",
             with ThreadPoolExecutor(max_workers=_concurrency(total_calls)) as pool:
                 futs = {pool.submit(_audit_unit, cu, u, source_lines,
                                     static_rules, knowledge, use_examples,
-                                    use_cache): (cu, u) for cu, u in tasks}
+                                    use_cache, call_graph): (cu, u)
+                        for cu, u in tasks}
                 for fut in as_completed(futs):
                     cu, u = futs[fut]
                     done += 1
@@ -161,7 +178,9 @@ def _concurrency(n_tasks: int) -> int:
 def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
                 static_rules: list[dict], knowledge: list[dict],
                 use_examples: bool = True,
-                use_cache: bool = False) -> tuple[list[Issue], bool | None]:
+                use_cache: bool = False,
+                call_graph: "G.CallGraph | None" = None,
+                ) -> tuple[list[Issue], bool | None]:
     """单个工作单元的 LLM 审计：检索知识 → 组 Prompt → (缓存/调用) → 解析 → 校验。
 
     返回 (issues, cache_hit)。cache_hit: True 命中 / False 未命中 / None 未启用缓存。
@@ -174,17 +193,48 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
     query = unit.source[:3000] + " " + " ".join(unit.context.get("imports", []))
     hits = R.retrieve(query, top_k=5, items=knowledge, scope=unit.source)
 
+    chain = ""
+    if call_graph is not None:
+        if unit.kind == "function":
+            callers, callees = call_graph.function_calls_text(
+                unit.path, unit.name)
+            parts = []
+            if callers:
+                parts.append(f"调用本函数的位置: {callers}")
+            if callees:
+                parts.append(f"本函数调用的项目内目标: {callees}")
+            chain = "\n".join(parts)
+        elif unit.kind == "file":
+            txt = call_graph.external_callers_text(unit.path)
+            if txt:
+                chain = ("跨文件调用关系（本文件函数被外部模块调用，近似解析）:\n"
+                         + txt)
+
     tpl = load_prompt(f"{unit.kind}_audit.md") or load_prompt("file_audit.md")
     ex_kind = "file" if unit.kind == "project" else unit.kind
-    prompt = (tpl
-              .replace("{{language}}", "Python")
-              .replace("{{scope}}", f"{unit.kind}: {unit.name}")
-              .replace("{{context}}", _context_block(unit))
-              .replace("{{knowledge}}", R.format_for_prompt(hits))
-              .replace("{{hints}}", _hints_block(hints))
-              .replace("{{examples}}",
-                       format_examples(ex_kind) if use_examples else "")
-              .replace("{{code}}", unit.tagged()))
+    ctx = _context_block(unit)
+    if chain:
+        ctx = ctx + "\n" + chain
+    def _ask(p: str) -> str | None:
+        messages = [
+            {"role": "system", "content": "你是资深代码审计专家，只输出符合要求的 JSON，不输出任何解释文字。"},
+            {"role": "user", "content": p},
+        ]
+        return client.chat(messages)
+
+    def _build(know_text: str) -> str:
+        return (tpl
+                .replace("{{language}}", "Python")
+                .replace("{{scope}}", f"{unit.kind}: {unit.name}")
+                .replace("{{context}}", ctx)
+                .replace("{{knowledge}}", know_text)
+                .replace("{{hints}}", _hints_block(hints))
+                .replace("{{examples}}",
+                         format_examples(ex_kind) if use_examples else "")
+                .replace("{{code}}", unit.tagged()))
+
+    base_know = R.format_for_prompt(hits)
+    prompt = _build(base_know)
 
     key = C.cache_key(prompt, client.model) if use_cache else None
     raw: str | None = C.get(key) if key else None
@@ -193,13 +243,34 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
         hit = True
     else:
         hit = False if use_cache else None
-        messages = [
-            {"role": "system", "content": "你是资深代码审计专家，只输出符合要求的 JSON，不输出任何解释文字。"},
-            {"role": "user", "content": prompt},
-        ]
         try:
-            raw = client.chat(messages)
-            if key:
+            raw = _ask(prompt)
+            # —— Agentic RAG 逃生舱：模型申请补充证据 → 检索回填 → 重问（≤2 轮）。
+            # 兑现申报书"Agentic 式 RAG"：检索不再是单向注入，模型可决定查什么。
+            for _round in range(2):
+                needs = [i for i in extract_json_array(raw or "")
+                         if isinstance(i, dict)
+                         and i.get("type") == "NEED-EVIDENCE"][:2]
+                if not needs:
+                    break
+                extra: list[dict] = []
+                seen: set = {h.get("id") for h in hits}
+                for n in needs:
+                    for e in R.retrieve(str(n.get("query", "")), top_k=3,
+                                        items=knowledge, scope=unit.source):
+                        if e.get("id") not in seen:
+                            seen.add(e.get("id"))
+                            extra.append(e)
+                if not extra:
+                    break
+                print(f"  [agentic] {unit.name} 申请{len(needs)}项证据，"
+                      f"补充{len(extra)}条知识重问", flush=True)
+                raw = _ask(
+                    _build(base_know + "\n\n# 应你申请的补充检索（同样必须比对）\n"
+                           + R.format_for_prompt(extra))
+                    + "\n\n（上轮你申请了补充证据，已提供。请给出最终 JSON 数组，"
+                      "不要再输出 NEED-EVIDENCE。）")
+            if key and raw is not None:
                 C.put(key, raw, model=client.model)
         except LLMError as e:
             print(f"[warn] 模型调用失败({unit.path}): {e}")
@@ -209,6 +280,8 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
     for item in extract_json_array(raw or ""):
         if not isinstance(item, dict):
             continue
+        if item.get("type") == "NEED-EVIDENCE":
+            continue                         # 申请对象不是问题，不计入
         issue = Issue.from_dict(item, path=unit.path, detector="llm",
                                  model=client.model)
         ok, reason = V.check_with_rules(issue, source_lines)
