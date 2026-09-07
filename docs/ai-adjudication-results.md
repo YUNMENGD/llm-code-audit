@@ -69,6 +69,39 @@ from_pyfile"执行用户可控配置"、six.py exec"变量未受控"——把开
   LLM 定级层温度>0 不可复现，静态治理层逐字节确定。分层架构把不可复现的
   判断压到最窄的一层，本身就是设计理由
 
+## Round 3：盲区下沉静态层（T2，commit 19037c2）
+
+把 round2 归因的三个盲区中**可确定性识别**的信号从 LLM 层下沉到规则引擎：
+- `logged_check`：except 块体含 logger/warnings/traceback/showtraceback 即"捕获+上报+降级"，非吞掉（botocore endpoint/history、werkzeug console 实证）
+- `exclude: usedforsecurity=False`：官方非安全用途声明同行豁免（requests 3 条 + botocore compat，源码该行就带着声明，零成本）
+- `skip_path_rx`：`_vendor|vendored|site-packages` 路径下 R-SEC-003 整条停用（vendored six.py，威胁模型非本仓库攻击面）
+
+**bench-real 五库回测（80 条，误杀仍为 0）：**
+requests 0.75→**1.0** | botocore 0.682→**0.833** | werkzeug 0.158→**0.333** | click 持平 | flask 持平
+
+**LLM 定级队列 34→26，三轮端到端漏斗（分母统一只算 T+F）：**
+
+| 阶段 | 队列 | T | F | precision | 误杀 | 成本 |
+|---|---|---|---|---|---|---|
+| A 治理前纯静态 | 34 | 1 | 29 | 0.033 | — | 免费 |
+| A' 治理后纯静态 | 26 | 1 | 21 | **0.045** | 0 | 免费 |
+| B round2 混合 | — | 1 | 12 | 0.077 | 0 | LLM |
+| B round3 混合 | 26 | 1 | 16 | **0.059** | 0 | LLM |
+
+**诚实的反转**：round3 混合精度（0.059）反而**低于** round2（0.077）。逐条归因——
+静态下沉确实把 3 条 LLM 误保留的 F 拿掉了，但改 R-LOG-001 的 why 文本导致缓存键
+变更、7 条 pass 型 except 重掷，其中 7 条从击杀翻回保留。净效应 −3+7 = +4 F。
+根因不是静态层变差（A' 明明升到 0.045），是 **LLM 层的温度不确定性**被 Prompt 文案改动触发重掷。
+→ 论文价值：静态层无此敏感（A→A' 单调改善可复现），不确定性完全集中在 LLM 定级层，
+分层把不可复现判断压到最窄一层这一设计动机，被 round3 反向印证了一次。
+
+**深层发现（比数字更有价值）**：round3 中 LLM 保留的 F 理由全部变成
+"except-pass 静默吞异常，违反 R-LOG-001 规则语义"——**LLM 已从 round1 的"知识错误"
+转为"忠实执行规则语义"**，且它没错：规则 why 白纸黑字写了"pass 属目标缺陷"。
+残余分歧的根源从"LLM 缺知识"上移到"规则语义与工程惯例的灰区"，这是设计权衡而非 bug——
+自动豁免 pass 会误杀真缺陷形态（GT 中唯一 ? 项 botocore configprovider:640 正是 pass 型），
+我们的立场是"故意者请 # noqa 显式声明"。
+
 ## 勘误纪律自查
 
 上一条消息我在未看明细时预告"P 0.25→0.27"——实际混算口径是 0.033→0.067

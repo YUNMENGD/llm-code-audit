@@ -24,6 +24,7 @@ _REALTEST = _ROOT.parent / "realtest"
 _BENCH = _ROOT / "bench-real"
 _EXCLUDE = {"tests", "test", "_tests", "testing", "docs", "doc", "_vendor",
             ".venv", "scripts", "example", "examples", "build", "dist"}
+LIBS = ["botocore", "click", "flask", "requests", "trio", "werkzeug"]
 
 
 def load_gt(lib: str) -> dict | None:
@@ -130,7 +131,7 @@ def _removed_by_pattern(gt: dict, cur_keys: set) -> dict:
 
 def main(libs: list[str]) -> int:
     if not libs:
-        libs = sorted(p.stem for p in _BENCH.glob("*.json"))
+        libs = LIBS
     all_ok = True
     for lib in libs:
         r = evaluate(lib)

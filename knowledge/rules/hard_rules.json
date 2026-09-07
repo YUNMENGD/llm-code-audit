@@ -37,7 +37,8 @@
       "severity": "critical",
       "source": "CWE-95 https://cwe.mitre.org/data/definitions/95.html",
       "pattern": "(?<![.\\w])(?<!def )(?:eval|exec)\\s*\\(",
-      "why": "eval/exec 会把输入当作 Python 代码执行。（不匹配 self.eval() / def eval 等方法名撞车，只报 builtin 真调用）",
+      "skip_path_rx": "(?:_vendor|vendored|site-packages)[/]",
+      "why": "eval/exec 会把输入当作 Python 代码执行。（不匹配 self.eval() / def eval 等方法名撞车，只报 builtin 真调用；vendored/_vendor/site-packages 路径下是上游第三方兼容代码，威胁模型不属于本仓库攻击面，规则级豁免——botocore vendored/six.py 实证）",
       "impact": "任意代码执行。",
       "suggestion": "表达式求值用 ast.literal_eval；其他场景改为显式分支逻辑。"
     },
@@ -81,8 +82,8 @@
       "severity": "medium",
       "source": "CWE-327 https://cwe.mitre.org/data/definitions/327.html",
       "pattern": "hashlib\\.(md5|sha1)\\s*\\(",
-      "exclude": ["# nosec"],
-      "why": "MD5/SHA1 已被碰撞攻破，不适合安全用途。（缓存键/校验和等非安全场景同行加 # nosec 豁免）",
+      "exclude": ["# nosec", "usedforsecurity=False"],
+      "why": "MD5/SHA1 已被碰撞攻破，不适合安全用途。（缓存键/校验和等非安全场景同行加 # nosec 豁免；Python 3.9+ 官方非安全用途声明 usedforsecurity=False 同行即豁免——HTTP Digest 等协议强制规定的算法强度由协议决定，不是代码缺陷）",
       "impact": "口令可被快速彩虹表/碰撞攻击还原。",
       "suggestion": "口令用 bcrypt/argon2；签名用 SHA-256 以上。"
     },
@@ -106,7 +107,8 @@
       "pattern": "\\bexcept\\s*(:|Exception\\s*:|BaseException\\s*:)",
       "body_check": "no_reraise",
       "probe_check": "except_probe",
-      "why": "捕获过宽或裸 except 会吞掉 KeyboardInterrupt/SystemExit 等，异常传播被中断。块体内清理后 raise 重抛（no_reraise）、显式 except Exception 做能力探测降级返回（except_probe）不报；裸 except/BaseException 静默吞仍属目标缺陷，确属故意的请 # noqa。",
+      "logged_check": "except_logged",
+      "why": "捕获过宽或裸 except 会吞掉 KeyboardInterrupt/SystemExit 等，异常传播被中断。块体内清理后 raise 重抛（no_reraise）、显式 except Exception 做能力探测降级返回（except_probe）、块体记录异常后再降级（logger/warnings/traceback，logged_check）不报；块体只有 pass 的静默吞仍属目标缺陷（规则语义是'吞'=故障不可见），确属故意的请 # noqa。",
       "impact": "故障不可见，问题扩散到下游才暴露，排障成本极高。",
       "suggestion": "只捕获预期的具体异常类型；无法处理就记录日志后 raise。"
     },

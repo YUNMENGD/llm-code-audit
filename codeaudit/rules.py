@@ -131,6 +131,38 @@ def _except_probe(lines: list[str], idx: int) -> bool:
 _VAR_ASSIGN = re.compile(r"^\s*(\w+)\s*=\s*(?:[^\n]*\b(?:open|connect)\s*\()")
 
 
+_LOG_CALL = re.compile(
+    r"\b(?:logger|logging|log|self\.log)\s*\.\s*(?:debug|info|warning|warn|error|exception|critical)\s*\("
+    r"|\b[A-Z][A-Z0-9_]*_?LOGGER\b\s*\.\s*\w+\s*\("   # trio 惯例：ASYNCGEN_LOGGER.exception(...)
+    r"|\bwarnings\s*\.\s*warn(?:ing)?\s*\("
+    r"|\btraceback\s*\.\s*print"
+    r"|\.showtraceback\s*\("
+    r"|exc_info\s*=\s*True")
+
+
+def _except_logged(lines: list[str], idx: int) -> bool:
+    """记录型宽捕获（模式扩展·logged-degrade）：except 块体内记录了异常即非"吞掉"。
+
+    R-LOG-001 的语义是"吞"——故障不可见。`except Exception: logger.debug(..., exc_info=True)`
+    与 `self.showtraceback()` 是"捕获+上报+降级继续"，可见性未破坏，属合法工程惯用法
+    （botocore endpoint/history、werkzeug debug console 实证）。块体只有 pass 不属于此类——
+    静默吞掉是申报书目标缺陷类，保留报警，故意者请 # noqa 声明意图。
+    """
+    row = lines[idx].strip()
+    if not re.match(r"except\s+(:|Exception|BaseException)(\s+as\s+\w+)?\s*:", row):
+        return False
+    base = len(lines[idx]) - len(lines[idx].lstrip())
+    for j in range(idx + 1, min(len(lines), idx + 12)):
+        b = lines[j]
+        if not b.strip():
+            continue
+        if len(b) - len(b.lstrip()) <= base:
+            break
+        if _LOG_CALL.search(b):
+            return True
+    return False
+
+
 def _resource_managed(lines: list[str], idx: int) -> bool:
     """finally/下游接管（模式扩展）：赋值行下方窗口出现同名 .close() 即豁免。
 
@@ -241,6 +273,13 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
             rx = re.compile(r["pattern"])
         except re.error:
             continue
+        skip_path = r.get("skip_path_rx")
+        if skip_path:
+            try:
+                if re.search(skip_path, path.replace("\\", "/")):
+                    continue         # 规则级路径豁免（如 vendored 第三方代码）
+            except re.error:
+                pass
         skip_doc = r.get("skip_docstring", True)
         match_comment = r.get("match_comment", False)
         for i, ln in enumerate(lines):
@@ -261,6 +300,8 @@ def scan_source(source: str, rules: list[dict], path: str = "<inline>") -> list[
                 continue
             if r.get("probe_check") == "except_probe" and _except_probe(lines, i):
                 continue                 # 模式F1：能力探测降级返回
+            if r.get("logged_check") == "except_logged" and _except_logged(lines, i):
+                continue                 # 模式logged-degrade：块体已记录异常，非"吞掉"
             if r.get("resource_check") == "managed" and _resource_managed(lines, i):
                 continue                 # finally/下游已接管关闭
             hits.append(Issue(
