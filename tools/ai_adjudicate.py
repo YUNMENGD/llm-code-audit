@@ -81,15 +81,16 @@ def _context_of(pkg: Path, rel: str, line: int, span: int = 22) -> str:
 
 
 def adjudicate(client: LLMClient, rule: dict, fname: str, line: int,
-               evidence: str, context: str) -> dict:
+               evidence: str, context: str, temp: float = 0.1) -> dict:
     prompt = USER_TPL.format(
         rule_id=rule["id"], title=rule["title"], why=rule.get("why", ""),
         fname=fname, line=line, evidence=evidence[:120], context=context)
-    key = C.cache_key(SYSTEM + "\x00" + prompt, client.model)
+    key = C.cache_key(SYSTEM + f"\x00t={temp}\x00" + prompt, client.model)
     hit = C.get(key)
     if hit is None:
         raw = client.chat([{"role": "system", "content": SYSTEM},
-                           {"role": "user", "content": prompt}])
+                           {"role": "user", "content": prompt}],
+                          temperature=temp)
         C.put(key, raw, model=client.model)
     else:
         raw = hit
@@ -130,6 +131,9 @@ def main(argv: list[str]) -> int:
     if "--only" in argv:
         only = [argv[argv.index("--only") + 1]]
     libs = only or LIBS
+    temp = 0.1
+    if "--temp" in argv:
+        temp = float(argv[argv.index("--temp") + 1])
 
     client = LLMClient()
     if not client.available():
@@ -139,7 +143,7 @@ def main(argv: list[str]) -> int:
 
     rows = [r for lib in libs for r in collect(lib)]
     est_in = sum(len(r["why"]) + len(r["evidence"]) for r in rows) / 400
-    print(f"待定级 {len(rows)} 条（{', '.join(libs)}），"
+    print(f"待定级 {len(rows)} 条（{', '.join(libs)}）temp={temp} "
           f"预估输入 ≈{len(rows) * 2.5:.0f}K token，缓存命中则免费")
     if dry:
         rows = rows[:1]
@@ -152,7 +156,8 @@ def main(argv: list[str]) -> int:
         try:
             r.update(adjudicate(client, {"id": r["rule"], "title": r["title"],
                                          "why": r["why"]},
-                                r["file"], r["line"], r["evidence"], ctx))
+                                r["file"], r["line"], r["evidence"], ctx,
+                                temp=temp))
         except Exception as e:                      # noqa: BLE001
             r["error"] = f"{type(e).__name__}: {e}"
             r["real"] = True                        # 失败保守保留
@@ -181,7 +186,7 @@ def main(argv: list[str]) -> int:
             for r in done if r["gt"] == "T" and not r.get("real")]
     saved = [r for r in done if r["gt"] == "F" and not r.get("real")]
     summary = {
-        "libs": libs, "n": len(done),
+        "libs": libs, "n": len(done), "temp": temp,
         "A_static": {"T": tA, "F": fA, "precision": pA},
         "B_llm_adjudicated": {"T": tB, "F": fB, "precision": pB,
                               "kept": len(keep)},
@@ -189,7 +194,8 @@ def main(argv: list[str]) -> int:
         "novel_O_kept": sum(1 for r in keep if r["gt"] == "O"),
         "detail": done,
     }
-    out = Path("out/ai_adjudication.json")
+    out = Path("out/ai_adjudication.t0.json" if temp == 0.0
+               else "out/ai_adjudication.json")
     out.write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                    encoding="utf-8")
     print(f"\nA 纯静态:        T{tA}/F{fA}  P={pA}")
