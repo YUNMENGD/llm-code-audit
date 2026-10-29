@@ -59,6 +59,14 @@ python -m codeaudit real-eval     # 六库对照报表（免 API）
 
 标注与结论：[docs/bench-real-results.md](docs/bench-real-results.md)
 
+## 数据飞轮
+
+- **交互式报告**：桌面端与 `--html` 输出为单文件交互 HTML——按严重度/类别/
+  检出方式筛选、文件分组折叠、关键词搜索；数据 JSON 内嵌，浏览器直接打开，零外部依赖。
+- **误报反馈回流**：报告里对告警点「标记误报」即入本地队列（`data/feedback/`，
+  不入库）；`python tools/promote_feedback.py` 聚合出候选豁免规则——机器只攒证据
+  给候选，写入知识库前须经 bench-real 回测人工确认，与"每条豁免可复核"纪律一致。
+
 ## 快速开始
 
 ```bash

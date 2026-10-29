@@ -578,4 +578,39 @@ _found2, _ = _audit_unit(_fc2, _unit, _unit.source.splitlines(),
                          use_examples=False, use_cache=False)
 check("无申请时单次调用（行为不变）", len(_fc2.prompts) == 1)
 
+print("\n[22] feedback 队列（G）+ 交互报告（E）")
+from codeaudit import feedback as FB                     # noqa: E402
+from codeaudit.models import AuditReport                 # noqa: E402
+_bak = FB.QUEUE.exists()
+_saved = FB.QUEUE.read_bytes() if _bak else None
+if FB.QUEUE.exists():
+    FB.QUEUE.unlink()
+try:
+    _fe = {"rule": "R-TEST", "title": "测试误报", "path": "z/y.py", "line": 3}
+    _a = FB.add(_fe)
+    _b = FB.add(_fe)
+    check("同键计数累加", _a["count"] == 1 and _b["count"] == 2)
+    check("队列落盘可读", len(FB.all_rows()) == 1 and FB.stats()["total_marks"] == 2)
+    try:
+        FB.add({"rule": "", "title": "x"})
+        check("缺 rule 拒绝", False)
+    except ValueError:
+        check("缺 rule 拒绝", True)
+    _iss = Issue(rule_id="R-TEST", category=Category.SECURITY,
+                 severity=Severity.LOW, title="测试", path="z/y.py",
+                 line_start=3, evidence="x", analysis="", fix="",
+                 confidence=0.5)
+    _rep = AuditReport(target="t", issues=[_iss],
+                       engine={"model": "m", "llm_used": False},
+                       stats={"total": 1, "elapsed_sec": 0})
+    _h = RP.render_interactive_html(_rep)
+    check("交互模板数据内嵌", "const D =" in _h and "__DATA__" not in _h)
+    check("误报按钮在位", "标记误报" in _h and 'data-id="${i.id}"' in _h)
+    check("XSS 转义生效", "<script>alert" not in _h)
+finally:
+    if _bak:
+        FB.QUEUE.write_bytes(_saved)
+    elif FB.QUEUE.exists():
+        FB.QUEUE.unlink()
+
 print(f"\n全部通过：{PASS} 项 ✓")

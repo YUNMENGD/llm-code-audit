@@ -124,6 +124,7 @@ def render_interactive_html(r: AuditReport) -> str:
     与 render_html（静态打印版）并存，桌面端用本函数。
     """
     items = [{
+        "id": n,
         "sev": _SEV_LABEL.get(i.severity, i.severity.value),
         "cat": _CAT.get(i.category.value, i.category.value),
         "rule": i.rule_id, "det": _DET.get(i.detector, i.detector),
@@ -131,7 +132,7 @@ def render_interactive_html(r: AuditReport) -> str:
         "func": i.function_name or "", "title": i.title, "evidence": i.evidence,
         "analysis": i.analysis, "impact": i.impact, "fix": i.fix,
         "source": i.source, "conf": round(i.confidence, 2), "votes": i.votes,
-    } for i in r.sorted_issues()]
+    } for n, i in enumerate(r.sorted_issues())]
     meta = {"target": r.target, "engine": r.engine.get("model", "?"),
             "llm": bool(r.engine.get("llm_used")),
             "elapsed": r.stats.get("elapsed_sec", 0), "total": len(items),
@@ -174,6 +175,9 @@ h1{font-size:17px;margin-bottom:2px}.sub{font-size:12px;color:var(--dim);margin-
 pre{background:#0d1117;color:#e6edf3;padding:10px 12px;border-radius:6px;font:12px/1.6 Consolas,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
 code.loc{font-family:Consolas,monospace;background:#eef2f8;border-radius:4px;padding:0 5px;font-size:12px}
 .empty{padding:40px;text-align:center;color:var(--dim)}
+.fpbtn{margin-top:8px;padding:3px 12px;border-radius:13px;border:1px solid var(--line);background:#fbfdff;font-size:12px;color:var(--dim);cursor:pointer}
+.fpbtn:hover{border-color:var(--acc);color:var(--acc)}
+.fpbtn.done{border-color:#2fbf8f;color:#2fbf8f;cursor:default}
 </style></head><body>
 <h1>代码审计报告</h1><div class="sub" id="sub"></div>
 <div class="chips" id="chips"></div>
@@ -221,7 +225,8 @@ const itemHTML = i => `<div class="item"><div class="ihead">
   <h4>证据代码</h4><pre>${esc(i.evidence)||"（未提供）"}</pre>
   ${i.analysis?`<h4>分析</h4>${esc(i.analysis)}`:""}${i.impact?`<h4>影响</h4>${esc(i.impact)}`:""}
   ${i.fix?`<h4>修复建议</h4><pre>${esc(i.fix)}</pre>`:""}
-  ${i.source?`<h4>知识来源</h4>${esc(i.source)}`:""}</div></div>`;
+  ${i.source?`<h4>知识来源</h4>${esc(i.source)}`:""}
+  <button class="fpbtn" data-id="${i.id}">标记误报（回流知识库）</button></div></div>`;
 function render(){
   const kept = D.items.filter(pass), byFile = new Map();
   kept.forEach(i => { if(!byFile.has(i.path)) byFile.set(i.path, []); byFile.get(i.path).push(i); });
@@ -234,6 +239,28 @@ function render(){
       <div class="gb">${items.map(itemHTML).join("")}</div></div>`; }).join("");
   el.querySelectorAll(".gh").forEach(h=>h.onclick=()=>h.parentElement.classList.toggle("closed"));
   el.querySelectorAll(".ihead").forEach(h=>h.onclick=e=>{ if(!e.target.closest(".ibody")) h.parentElement.classList.toggle("open"); });
+  el.querySelectorAll(".fpbtn").forEach(b=>b.onclick=e=>{ e.stopPropagation(); markFP(+b.dataset.id, b); });
+  marked.forEach(id => { const b = el.querySelector(`.fpbtn[data-id="${id}"]`); if(b){ b.classList.add("done"); b.textContent = "已标记，将回流知识库"; } });
+}
+const marked = new Set();
+async function markFP(id, btn){
+  if (marked.has(id)) return;
+  const i = D.items.find(x => x.id === id); if (!i) return;
+  const payload = {rule:i.rule, title:i.title, path:i.path, line:i.line,
+                   detector:i.det, evidence:i.evidence};
+  try {
+    const r = await fetch("/api/feedback", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+    if (!r.ok) throw 0;
+    const j = await r.json();
+    marked.add(id); btn.classList.add("done");
+    btn.textContent = `已标记（累计 ${j.count} 次）`;
+  } catch (_) {
+    // 报告被单独打开（无后端）：降级为复制反馈 JSON，可粘贴回传
+    try { await navigator.clipboard.writeText(JSON.stringify(payload));
+      btn.textContent = "无后端连接，反馈 JSON 已复制到剪贴板"; }
+    catch (__) { btn.textContent = "标记失败：请在桌面端使用或手动记录"; }
+  }
 }
 document.getElementById("expand").onclick=()=>document.querySelectorAll(".grp").forEach(g=>g.classList.remove("closed"));
 document.getElementById("collapse").onclick=()=>document.querySelectorAll(".grp").forEach(g=>g.classList.add("closed"));

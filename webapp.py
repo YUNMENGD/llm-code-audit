@@ -206,3 +206,29 @@ def job_result(job_id: str) -> JSONResponse:
     rep = job["report"]
     return JSONResponse({"html": job["html"], "markdown": job["markdown"],
                          "stats": rep.stats, "engine": rep.engine})
+
+
+class FeedbackReq(BaseModel):
+    rule: str
+    title: str
+    path: str = ""
+    line: int | None = None
+    detector: str = ""
+    evidence: str = ""
+
+
+@app.post("/api/feedback")
+def add_feedback(req: FeedbackReq) -> dict:
+    """误报标记入队（G）：data/feedback/queue.json，键去重累计计数。"""
+    from codeaudit import feedback as FB
+    try:
+        rec = FB.add(req.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "count": rec["count"], "key": rec["key"]}
+
+
+@app.get("/api/feedback")
+def feedback_stats() -> dict:
+    from codeaudit import feedback as FB
+    return FB.stats()
