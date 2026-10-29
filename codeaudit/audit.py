@@ -36,12 +36,16 @@ def load_prompt(name: str) -> str:
 def audit_path(target: str | Path, depth: str = "file",
                use_examples: bool | None = None,
                cross_review: bool | None = None,
-               use_cache: bool | None = None) -> AuditReport:
+               use_cache: bool | None = None,
+               only_files: set[str] | None = None) -> AuditReport:
     """审计一个文件或目录。depth: function(逐函数) | file(整体) | project(工程级)
 
     use_examples: few-shot 校准示例开关；None 时读环境变量 PROMPT_EXAMPLES。
     cross_review: D15 双模型交叉复核开关；None 时读 AUDIT_CROSS_REVIEW。
     use_cache:    D17 增量缓存开关；None 时读 AUDIT_CACHE。
+    only_files:   增量审计——绝对路径集合，只扫这些文件；None=全量。
+                  调用图仍以整个 target 为上下文域：谁调用了增量代码，
+                  影响链不能断（增量的价值是省算力，不是省上下文）。
     """
     target = Path(target)
     started = time.time()
@@ -64,9 +68,18 @@ def audit_path(target: str | Path, depth: str = "file",
               "reviewer": reviewer.model if do_cross else None,
               "cache": use_cache}
 
-    files = [target] if target.is_file() else sorted(
+    all_files = [target] if target.is_file() else sorted(
         p for p in target.rglob("*.py")
         if not any(part in P.IGNORE_DIRS for part in p.parts))
+    if only_files is not None:
+        want = {str(Path(p).resolve()) for p in only_files}
+        files = [p for p in all_files if str(p.resolve()) in want]
+        engine["incremental"] = {"changed": len(want), "scanned": len(files),
+                                 "skipped": len(all_files) - len(files)}
+        print(f"[incremental] 变更 {len(want)} 文件 → 扫描 {len(files)}"
+              f"（跳过 {len(all_files) - len(files)}，上下文仍全量）", flush=True)
+    else:
+        files = all_files
 
     # 跨文件调用图（申报书"函数调用链/跨文件依赖"）：纯 AST 零成本，仅 LLM
     # 审计时构建；失败不拉闸审计（graph=None 时 Prompt 上下文自动缺省）。
@@ -75,7 +88,7 @@ def audit_path(target: str | Path, depth: str = "file",
             and os.getenv("AUDIT_CALLGRAPH", "1") == "1":
         try:
             t0 = time.time()
-            call_graph = G.CallGraph().build(target, files)
+            call_graph = G.CallGraph().build(target, all_files)
             engine["callgraph"] = {**call_graph.stats(),
                                    "build_sec": round(time.time() - t0, 2)}
             print(f"[graph] 调用图 {call_graph.stats()} "

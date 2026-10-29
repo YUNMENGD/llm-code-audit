@@ -72,6 +72,10 @@ python -m codeaudit check examples/vulnerable_app.py
 # ② 完整 LLM 审计（先在 .env 配置 API Key，见下）
 python -m codeaudit audit examples/vulnerable_app.py -o out/report.md
 
+# ②b 增量审计：只审 git 相对 REV 的变更 .py（调用图等上下文仍全量构建）
+python -m codeaudit check . --changed-since HEAD
+python -m codeaudit audit . --changed-since HEAD~3
+
 # ③ 桌面应用（独立窗口，拖拽目录即审）
 python desktop.py
 

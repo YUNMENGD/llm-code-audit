@@ -27,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("check", "audit"):
         s = sub.add_parser(name, help="静态检查" if name == "check" else "完整审计")
         s.add_argument("target", help="要审计的文件或目录")
+        s.add_argument("--changed-since", dest="changed", metavar="REV",
+                       default=None,
+                       help="增量审计：只审 git 中相对 REV（如 HEAD~3，默认 HEAD=工作区变更）"
+                            "新增/修改的 .py 文件；调用图等上下文仍按全库构建")
         if name == "audit":
             s.add_argument("-d", "--depth", choices=["function", "file", "project"],
                            default="file", help="审计粒度")
@@ -100,12 +104,30 @@ def main(argv: list[str] | None = None) -> int:
         from .realeval import main as real_main
         return real_main(a.libs)
 
+    # 增量审计文件集合（--changed-since）：git 不可用/非仓库时直接报错退出
+    only = None
+    if getattr(a, "changed", None) is not None:
+        from .gitdiff import GitUnavailable, git_changed_files
+        try:
+            only = git_changed_files(a.target if Path(a.target).is_dir()
+                                     else Path(a.target).parent,
+                                     base=a.changed or "HEAD")
+        except GitUnavailable as e:
+            print(f"增量审计不可用：{e}")
+            return 2
+        if not only:
+            print(f"增量审计：相对 {a.changed or 'HEAD'} 无 .py 变更，无需扫描")
+            return 0
+
     if a.cmd == "check":
         from .report import render_markdown
         from .models import AuditReport
         files = [Path(a.target)] if Path(a.target).is_file() else sorted(
             p for p in Path(a.target).rglob("*.py")
             if not any(x in p.parts for x in P.IGNORE_DIRS))
+        if only is not None:
+            files = [p for p in files if str(p.resolve()) in only]
+            print(f"增量模式：{len(files)} 个变更文件（上下文外文件已跳过）")
         all_rules = RL.load_rules()
         issues = []
         for f in files:
@@ -127,7 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     from .report import write_report
     print(f"审计 {a.target}（粒度 {a.depth}）...")
     rep = audit_path(a.target, depth=a.depth, use_examples=a.examples,
-                     cross_review=a.cross, use_cache=a.cache)
+                     cross_review=a.cross, use_cache=a.cache,
+                     only_files=only)
     md, js, hp = write_report(rep, a.out, a.json_out, a.html_out)
     extra = f"、{hp}" if hp else ""
     print(f"完成：{rep.stats['total']} 个问题 → {md}{extra}")

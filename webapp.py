@@ -62,10 +62,26 @@ class AuditReq(BaseModel):
     depth: str = "file"          # file | function | project
     mode: str = "static"         # static | ai
     examples: bool = True
+    incremental: bool = False    # 仅审 git 相对 HEAD 的变更 .py（含未跟踪）
+
+
+def _incremental_only(target: str) -> set[str]:
+    """git 变更文件集合；非仓库/无 git 时抛 RuntimeError（job 进度里可见）。"""
+    from codeaudit.gitdiff import GitUnavailable, git_changed_files
+    p = Path(target)
+    try:
+        return git_changed_files(p if p.is_dir() else p.parent, base="HEAD")
+    except GitUnavailable as e:
+        raise RuntimeError(f"增量审计不可用：{e}") from e
 
 
 def _dispatch(req: AuditReq):
     """static：仅规则层（免费秒级）；ai：走完整 audit_path（其进度 print 被捕获）。"""
+    only = None
+    if req.incremental:
+        only = _incremental_only(req.target)
+        print(f"[incremental] git 变更 {len(only)} 个 .py 文件，其余跳过"
+              f"（调用图等上下文不受影响）")
     if req.mode == "static":
         from codeaudit.models import AuditReport
         target = Path(req.target)
@@ -74,11 +90,15 @@ def _dispatch(req: AuditReq):
         files = [target] if target.is_file() else sorted(
             p for p in target.rglob("*.py")
             if not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv")))
+        if only is not None:
+            files = [p for p in files if str(p.resolve()) in only]
         for i, f in enumerate(files, 1):
             src = f.read_text(encoding="utf-8", errors="replace")
             rep.issues.extend(RL.scan_source(src, rs, str(f)))
             print(f"[{i}/{len(files)}] 扫描 {f.name}")
         rep.engine = {"model": "static-rules", "llm_used": False, "depth": req.depth}
+        if only is not None:
+            rep.engine["incremental"] = {"changed": len(only), "scanned": len(files)}
         rep.stats = {"total": len(rep.issues),
                      "by_severity": rep.count_by("severity"),
                      "by_category": rep.count_by("category"),
@@ -86,7 +106,8 @@ def _dispatch(req: AuditReq):
                      "elapsed_sec": 0}
         return rep
     return audit_path(req.target, depth=req.depth,
-                      use_examples=req.examples or None)
+                      use_examples=req.examples or None,
+                      only_files=only)
 
 
 def _run_job(job_id: str, req: AuditReq) -> None:

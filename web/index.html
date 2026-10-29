@@ -17,6 +17,8 @@
   .panel { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; overflow:auto; }
   .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:8px; }
   label { display:block; margin:10px 0 4px; font-size:12px; color:var(--dim); }
+  label.ckrow { display:flex; align-items:center; gap:6px; margin-top:12px; cursor:pointer; }
+  label.ckrow input { accent-color:var(--accent); cursor:pointer; }
   input[type=text] { width:100%; padding:8px 10px; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--txt); font-size:13px; }
   .pickrow { display:flex; gap:6px; margin-top:6px; }
   .pickrow button { flex:1; padding:7px 0; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
@@ -72,6 +74,7 @@
       <button data-v="function">函数级</button>
       <button data-v="project">工程级</button>
     </div>
+    <label class="ckrow"><input type="checkbox" id="incr"> 增量审计——只扫 git 相对 HEAD 的变更文件（需目标为 git 仓库）</label>
     <button id="run">开始审计</button>
     <div id="status"></div>
     <pre id="log">等待任务…</pre>
@@ -139,7 +142,7 @@ $("#run").onclick = async () => {
   $("#errbox").style.display = "none"; $("#log").textContent = "";
   $("#status").innerHTML = `<span class="spin">⏳</span> 启动任务…`;
   const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({target, mode, depth})});
+    body: JSON.stringify({target, mode, depth, incremental: $("#incr").checked})});
   const j = await r.json();
   if (!r.ok) { fail(j.detail || "启动失败"); return; }
   poll(j.job_id);
@@ -181,6 +184,7 @@ async function render(id) {
     `<span class="chip" style="color:#d05c5c">严重 <b>${sec}</b></span>` +
     `<span class="chip" style="color:#c07a1d">高危 <b>${high}</b></span>` +
     `<span class="chip" style="color:#5a7396">中低危 <b>${midlow}</b></span>` +
+    (d.engine.incremental ? `<span class="chip" style="color:#2fbf8f">增量 <b>${d.engine.incremental.scanned}</b>/${d.engine.incremental.changed} 变更文件</span>` : ``) +
     `<span class="chip">引擎 ${d.engine.model || "?"}${d.engine.llm_used ? " · AI" : " · 纯静态"} · ${st.elapsed_sec ?? 0}s</span>`;
   $("#run").disabled = false;
 }
