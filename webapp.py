@@ -119,7 +119,7 @@ def _run_job(job_id: str, req: AuditReq) -> None:
             rep = _dispatch(req)
             job["progress"].append("生成报告中…")
         job["report"] = rep
-        job["html"] = RP.render_html(rep)
+        job["html"] = RP.render_interactive_html(rep)
         job["markdown"] = RP.render_markdown(rep)
         job["status"] = "done"
     except Exception as e:                       # noqa: BLE001 前端需要看到失败原因
