@@ -84,6 +84,9 @@ python -m codeaudit audit examples/vulnerable_app.py -o out/report.md
 python -m codeaudit check . --changed-since HEAD
 python -m codeaudit audit . --changed-since HEAD~3
 
+# ②c CI 门禁：存在 ≥medium 问题时退出码 1（GitHub Actions 模板见 examples/codeaudit-gate.yml）
+python -m codeaudit audit . --fail-on medium
+
 # ③ 桌面应用（独立窗口，拖拽目录即审）
 python desktop.py
 

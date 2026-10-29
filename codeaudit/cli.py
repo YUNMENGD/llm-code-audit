@@ -47,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
             s.add_argument("--no-cache", dest="cache", action="store_false",
                            default=None,
                            help="关闭 D17 增量缓存（默认开启：同一代码重审不再调模型）")
+            s.add_argument("--fail-on", dest="fail_on", default="none",
+                           choices=["none", "low", "medium", "high", "critical"],
+                           metavar="SEV",
+                           help="CI 门禁：存在 ≥该严重度的问题时退出码 1（默认 none 不启用）")
 
     sub.add_parser("rules", help="列出规则库")
     k = sub.add_parser("kb", help="检索知识库")
@@ -164,6 +168,17 @@ def main(argv: list[str] | None = None) -> int:
               f"（未命中=本次实际计费调用数）")
     if not rep.engine["llm_used"]:
         print("提示：未检测到大模型 API Key，本次仅静态规则结果。配置 .env 后可获得语义级审计。")
+    if a.fail_on != "none":
+        from .models import Severity
+        order = [s.value for s in Severity]          # critical→low，声明序即严重度序
+        thr = order.index(a.fail_on)
+        bad = [i for i in rep.issues if order.index(i.severity.value) <= thr]
+        if bad:
+            print(f"[gate] {len(bad)} 个问题达到 ≥{a.fail_on}，按门禁失败退出")
+            for i in bad[:10]:
+                print(f"  · {i.severity.value:8s} {i.rule_id} {i.path}:{i.line_start} {i.title}")
+            return 1
+        print(f"[gate] 无 ≥{a.fail_on} 问题，门禁通过")
     return 0
 
 

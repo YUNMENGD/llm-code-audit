@@ -1,0 +1,51 @@
+name: code-audit gate
+# 明查秋毫代码审计 CI 门禁模板
+# 用法：复制到目标仓库 .github/workflows/，按需改 fail-on / depth / 触发分支。
+# 退出码：存在 ≥fail-on 严重度的问题 → 红灯。默认 medium。
+# 静态模式零密钥零成本；需 AI 深度审计时把 codeaudit-secret 配进仓库 Secrets
+# 并解开下方 env 注释（AI 模式按文件数计费，建议配合增量或大改动才开）。
+
+on:
+  pull_request:
+    paths: ["**/*.py"]
+  push:
+    branches: [main]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install codeaudit
+        run: |
+          git clone --depth 1 https://github.com/YUNMENGD/llm-code-audit.git /tmp/codeaudit
+          pip install -r /tmp/codeaudit/requirements.txt
+          pip install /tmp/codeaudit
+
+      - name: Run audit (incremental on PR, full on push)
+        env:
+          # LLM_API_KEY: ${{ secrets.CODEAUDIT_API_KEY }}   # 启用 AI 模式时解开
+          AUDIT_CACHE: "1"
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ARGS="--changed-since ${{ github.event.pull_request.base.sha }}"
+          else
+            ARGS=""
+          fi
+          python -m codeaudit audit . --depth file --fail-on medium \
+            --html report.html -o report.md -j report.json $ARGS
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-audit-report
+          path: |
+            report.html
+            report.md
+            report.json
