@@ -298,6 +298,60 @@ render();
 </script></body></html>"""
 
 
+_SECRET_RX = None
+
+
+def _sanitize_text(text: str) -> str:
+    """掩码疑似凭据：sk- 长串、key/password/secret/token 赋值后的长值。"""
+    import re
+    global _SECRET_RX
+    if _SECRET_RX is None:
+        _SECRET_RX = re.compile(
+            r"(sk-[A-Za-z0-9_\-]{8,})"
+            r"|((?:password|passwd|secret|token|api_?key|apikey)\s*[:=]\s*[\"']?)"
+            r"([A-Za-z0-9_\-+/=]{6,})", re.I)
+
+    def _sub(m):
+        if m.group(1):
+            return m.group(1)[:6] + "…[已掩码]"
+        return m.group(2) + "***[已掩码]"
+    return _SECRET_RX.sub(_sub, text or "")
+
+
+def render_share_html(r: AuditReport, watermark: str = "") -> str:
+    """脱敏分享版交互报告：路径只留文件名、凭据掩码、可选斜向水印。
+
+    用于对外提交/投稿附件：不泄露本机目录结构与密钥材料；
+    问题明细/证据/修复建议保留（证据中的凭据同样掩码）。
+    """
+    from dataclasses import replace
+    clean_issues = []
+    for i in r.sorted_issues():
+        clean_issues.append(replace(
+            i, path=Path(i.path).name,
+            evidence=_sanitize_text(i.evidence),
+            analysis=_sanitize_text(i.analysis),
+            fix=_sanitize_text(i.fix),
+            impact=_sanitize_text(i.impact)))
+    clean = AuditReport(target=Path(r.target).name or r.target,
+                        issues=clean_issues,
+                        engine={**r.engine, "share": True},
+                        stats=dict(r.stats))
+    html = render_interactive_html(clean)
+    wm = (watermark or "脱敏分享版").replace("&", "&amp;").replace(
+        "<", "&lt;").replace(">", "&gt;")
+    inject = (
+        "<style>.wm{position:fixed;inset:0;display:flex;align-items:center;"
+        "justify-content:center;transform:rotate(-24deg);font-size:64px;"
+        "font-weight:700;color:rgba(120,140,170,.10);pointer-events:none;"
+        "z-index:9999;user-select:none;white-space:nowrap}"
+        ".sharetag{position:fixed;top:8px;right:12px;z-index:9999;font-size:11px;"
+        "color:#8496b0;background:rgba(255,255,255,.85);border:1px solid #dce8f7;"
+        "border-radius:10px;padding:2px 10px}</style>"
+        f'<div class="wm">{wm}</div><div class="sharetag">脱敏分享版 · 路径与凭据已掩码</div>')
+    return html.replace("</body>", inject + "</body>")
+
+
 def write_report(r: AuditReport, out_md: str | Path,
                  out_json: str | Path | None = None,
                  out_html: str | Path | None = None) -> tuple[Path, Path | None, Path | None]:

@@ -33,10 +33,12 @@ def git_changed_files(repo: str | Path, base: str = "HEAD",
     except (GitUnavailable, FileNotFoundError) as e:
         raise GitUnavailable(f"{repo} 不是 git 仓库或 git 不可用: {e}") from e
 
+    from .jsrules import JS_EXTS
+    exts = (".py",) + tuple(JS_EXTS)
     out: set[str] = set()
     names = _git("diff", "--name-only", "--diff-filter=drm", base)
-    out |= {l.strip() for l in names.splitlines() if l.strip().endswith(".py")}
+    out |= {l.strip() for l in names.splitlines() if l.strip().endswith(exts)}
     if include_untracked:
         un = _git("ls-files", "--others", "--exclude-standard")
-        out |= {l.strip() for l in un.splitlines() if l.strip().endswith(".py")}
+        out |= {l.strip() for l in un.splitlines() if l.strip().endswith(exts)}
     return {str(repo / n) for n in out}

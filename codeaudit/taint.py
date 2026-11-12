@@ -63,6 +63,20 @@ def _match_catalog(name: str, entries: list[dict]) -> dict | None:
     return None
 
 
+def _iter_scope(fn: ast.AST):
+    """遍历函数体但剪掉嵌套作用域（嵌套 def/class 由 build 单独登记，
+    lambda 体归外层但无独立赋值语义）——避免同一 sink 被外层与内层
+    函数记录重复统计。"""
+    stack = list(ast.iter_child_nodes(fn))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef, ast.Lambda)):
+            continue
+        yield node
+        stack.extend(ast.iter_child_nodes(node))
+
+
 class TaintTracker:
     """构建期：逐函数收集 source/sink/赋值/调用；迭代传播；查询期：出路径文本。"""
 
@@ -127,7 +141,7 @@ class TaintTracker:
 
     def _scan_body(self, fn: ast.AST, rec: dict, mod: str, klass: str | None,
                    aliases: dict, resolve) -> None:
-        for node in ast.walk(fn):
+        for node in _iter_scope(fn):
             if isinstance(node, ast.Call):
                 name = _call_name(node.func)
                 src = _match_catalog(name, self.sources)

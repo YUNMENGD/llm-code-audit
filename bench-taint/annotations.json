@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "name": "污点追踪候选路径人工核验标注（六真实库）",
+    "annotated_at": "2026-11-12",
+    "method": "TaintTracker 候选路径逐条读源码上下文核验：T=真实外部数据流到达 sink（含设计特性，流本身真实）；F=近似误报（非外部输入/类型不符/护栏已覆盖）；?=存疑单列",
+    "pattern_legend": "TYPE=对象类型不符（非文件 open/非内置 eval） GUARD=护栏或信任边界已覆盖 CONST=常量路径误染 CLI=本地 CLI 工具自有参数 DESIGN=设计特性（流真实但属文档化行为）",
+    "note": "候选是静态近似提示而非裁决；precision 度量证据层噪声，口径同 bench-real（T/(T+F)，? 单列）。库源码不入库，复现按 bench-real clone 字段下载 realtest/ 后跑 tools/taint_eval.py --collect"
+  },
+  "annotations": [
+    {"lib": "flask", "file": "cli.py", "line": 1023, "call": "eval", "verdict": "T", "pattern": "DESIGN", "note": "PYTHONSTARTUP 环境变量→读取文件→eval 执行，流真实；解释器启动脚本兼容是文档化设计，信任边界=本地环境"},
+    {"lib": "flask", "file": "cli.py", "line": 1022, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "环境变量控制打开路径，流真实；isfile 校验存在性但不约束目录，属同一设计特性"},
+    {"lib": "flask", "file": "config.py", "line": 209, "call": "exec", "verdict": "T", "pattern": "DESIGN", "note": "from_envvar 环境变量→from_pyfile→exec 配置文件，跨函数传播真实；加载开发者指定配置是框架设计"},
+    {"lib": "flask", "file": "config.py", "line": 208, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "同上链路：root_path join 环境变量文件名后 open，流真实"},
+    {"lib": "trio", "file": "_tests/check_type_completeness.py", "line": 222, "call": "open", "verdict": "F", "pattern": "CONST", "note": "errors_by_platform_file 由 Path(__file__).parent/常量名构成，非外部输入；.exists() 文本撞外部特征正则致误染"},
+    {"lib": "trio", "file": "_tests/check_type_completeness.py", "line": 181, "call": "open", "verdict": "F", "pattern": "CONST", "note": "同变量同误染：仓库内固定 JSON 路径"},
+    {"lib": "trio", "file": "_tools/mypy_annotate.py", "line": 121, "call": "open", "verdict": "F", "pattern": "CLI", "note": "cmd_line.dumpfile 是开发者自有 CLI 参数，写自己指定的结果文件；本地工具自有输入不构成攻击面"},
+    {"lib": "trio", "file": "_tools/mypy_annotate.py", "line": 102, "call": "open", "verdict": "F", "pattern": "CLI", "note": "同上：读自有 dumpfile，信任边界=运行工具的人"},
+    {"lib": "werkzeug", "file": "debug/__init__.py", "line": 398, "call": "frame.eval", "verdict": "F", "pattern": "TYPE", "note": "frame.eval 是调试器帧求值方法而非内置 eval；目录后缀匹配过宽，且调试控制台有 PIN+host 信任护栏"},
+    {"lib": "werkzeug", "file": "debug/__init__.py", "line": 431, "call": "send_file", "verdict": "F", "pattern": "TYPE", "note": "send_file 首参是 BytesIO 内存对象而非路径，download_name 仅建议文件名；路径遍历不适用"},
+    {"lib": "werkzeug", "file": "test.py", "line": 1064, "call": "self.open", "verdict": "F", "pattern": "TYPE", "note": "测试客户端 self.open 发模拟请求，builder 是请求构造器非文件路径；方法名撞 open 目录"},
+    {"lib": "werkzeug", "file": "utils.py", "line": 490, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "send_file 的 path 参数→open，调用方可传请求派生路径，流真实；safe_join 校验是调用方责任（文档化），提示有价值"}
+  ]
+}

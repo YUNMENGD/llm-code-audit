@@ -68,9 +68,11 @@ def audit_path(target: str | Path, depth: str = "file",
               "reviewer": reviewer.model if do_cross else None,
               "cache": use_cache}
 
+    from . import jsrules as JR
     all_files = [target] if target.is_file() else sorted(
-        p for p in target.rglob("*.py")
-        if not any(part in P.IGNORE_DIRS for part in p.parts))
+        p for p in target.rglob("*")
+        if p.is_file() and p.suffix in ({".py"} | JR.JS_EXTS)
+        and not any(part in P.IGNORE_DIRS for part in p.parts))
     if only_files is not None:
         want = {str(Path(p).resolve()) for p in only_files}
         files = [p for p in all_files if str(p.resolve()) in want]
@@ -114,21 +116,29 @@ def audit_path(target: str | Path, depth: str = "file",
     guards = RL.load_guards()
     coverage_by_path: dict[str, dict] = {}
     suppressed: list[str] = []
+    js_rules = JR.load_js_rules()
     for fi, f in enumerate(files, 1):
         if engine["llm_used"] or n_files > 1:
             print(f"[{fi}/{n_files}] 解析 {f} ...", flush=True)
-        file_unit = P.parse_file(f)
+        is_js = f.suffix in JR.JS_EXTS
+        file_unit = _parse_js_file(f) if is_js else P.parse_file(f)
         source_lines = file_unit.source.splitlines()
-        coverage_by_path[str(f)] = RL.guard_coverage(file_unit.source, guards)
+        coverage_by_path[str(f)] = ({} if is_js
+                                    else RL.guard_coverage(file_unit.source, guards))
 
-        # ① 静态硬性规则
-        issues += RL.scan_source(file_unit.source, static_rules, str(f))
+        # ① 静态硬性规则（按语言分流）
+        if is_js:
+            issues += JR.scan_js_source(file_unit.source, js_rules, str(f))
+        else:
+            issues += RL.scan_source(file_unit.source, static_rules, str(f))
 
         # ② LLM 审计（未配置密钥则跳过，系统仍可输出静态结果）
         units: list[CodeUnit] = []
         if do_cross or client.available():
             engine["llm_used"] = True
-            if depth == "function":
+            if is_js:
+                units = [file_unit]      # JS/TS 试点：文件级语义审计
+            elif depth == "function":
                 units = P.split_functions(file_unit) or [file_unit]
             elif depth == "project" and target.is_dir():
                 units = [P.parse_project(target)]
@@ -141,8 +151,12 @@ def audit_path(target: str | Path, depth: str = "file",
             done = 0
             with ThreadPoolExecutor(max_workers=_concurrency(total_calls)) as pool:
                 futs = {pool.submit(_audit_unit, cu, u, source_lines,
-                                    static_rules, knowledge, use_examples,
-                                    use_cache, call_graph, taint_tracker): (cu, u)
+                                    js_rules if is_js else static_rules,
+                                    knowledge,
+                                    False if is_js else use_examples,
+                                    use_cache,
+                                    None if is_js else call_graph,
+                                    None if is_js else taint_tracker): (cu, u)
                         for cu, u in tasks}
                 for fut in as_completed(futs):
                     cu, u = futs[fut]
@@ -162,7 +176,8 @@ def audit_path(target: str | Path, depth: str = "file",
         C.flush()
 
     # ③ 校验管线：去重 → 跨源CWE合并(T3) → 幻觉过滤 → rule_id白名单 → 防护抑制(guards) → 双模型复核(D15) → 置信度闸门(T2)
-    valid_ids = {it["id"] for it in knowledge} | {r["id"] for r in static_rules}
+    valid_ids = ({it["id"] for it in knowledge} | {r["id"] for r in static_rules}
+                 | {r["id"] for r in js_rules})
     before = len(issues)
     issues = V.dedupe(issues)
     issues = V.cwe_merge(issues)
@@ -246,7 +261,11 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
         if tt:
             chain = (chain + "\n" + tt) if chain else tt
 
-    tpl = load_prompt(f"{unit.kind}_audit.md") or load_prompt("file_audit.md")
+    lang = unit.context.get("language", "Python")
+    if lang != "Python":
+        tpl = load_prompt("js_file_audit.md") or load_prompt("file_audit.md")
+    else:
+        tpl = load_prompt(f"{unit.kind}_audit.md") or load_prompt("file_audit.md")
     ex_kind = "file" if unit.kind == "project" else unit.kind
     ctx = _context_block(unit)
     if chain:
@@ -260,7 +279,7 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
 
     def _build(know_text: str) -> str:
         return (tpl
-                .replace("{{language}}", "Python")
+                .replace("{{language}}", lang)
                 .replace("{{scope}}", f"{unit.kind}: {unit.name}")
                 .replace("{{context}}", ctx)
                 .replace("{{knowledge}}", know_text)
@@ -326,6 +345,21 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
             issue.analysis = f"[校验未通过:{reason}] {issue.analysis}"
         out.append(issue)
     return out, hit
+
+
+def _parse_js_file(path: Path) -> CodeUnit:
+    """JS/TS 文件级单元：不做 AST 解析（试点期），正则提取函数名作上下文。"""
+    import re
+    source = path.read_text(encoding="utf-8", errors="replace")
+    names = re.findall(r"(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+"
+                       r"([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\()", source)
+    funcs = [a or b for a, b in names][:30]
+    imports = re.findall(r"(?:import\s+.*?from\s+|require\()\s*[\"']([^\"']+)[\"']",
+                         source)[:15]
+    return CodeUnit(kind="file", name=path.stem, path=str(path), source=source,
+                    line_start=1, line_end=max(len(source.splitlines()), 1),
+                    context={"language": "JavaScript/TypeScript",
+                             "functions": funcs, "imports": imports})
 
 
 def _context_block(unit: CodeUnit) -> str:
