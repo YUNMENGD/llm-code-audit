@@ -39,17 +39,39 @@
 - [x] 离线测试 168 → 203 项（新增 settings / kbadmin / history / MCP 四组）
 - [x] pytest 30 项回归全绿
 
+## 已落地（v3 轮：论文导向七项）
+
+- [x] **RAG 消融实验**（tools/rag_ablation.py + docs/rag-ablation-results.md）：
+      以 bench-real 119 条 T/F 标注为真值，双查询口径（文件窗/函数窗）测
+      recall@5；关键词臂已出数（文件窗 0.714 / 函数窗 0.592），向量臂待
+      embeddings 端点（如实标注⚠️暂未获取）。附带修复两个真实缺陷：
+      cwe_map 五条映射指向不存在条目（已修正到真实条目）；STY-006 缺
+      TODO/FIXME 触发词（已补，六库零误杀回归通过）
+- [x] **跨文件污点追踪**（codeaudit/taint.py + knowledge/taint/catalog.json）：
+      source→sink 目录 + 调用图迭代传播（≤6 轮不动点），候选路径带行号
+      注入审计 Prompt；AUDIT_TAINT=0 可关；失败自动降级
+- [x] **审计对比 diff**（codeaudit/diff.py + CLI diff 子命令 + /api/history-diff
+      + 历史页勾选对比 UI）：新增/消除/行号移动/存续四态，drift 容忍
+- [x] **JS/TS 多语言试点**（codeaudit/jsrules.py + knowledge/rules/js_rules.json
+      12 条 + examples/bench-js 正反例）：check/桌面静态审计按后缀分流；
+      注释遮蔽 + eslint-disable 抑制；Python 路径零影响（规则加载器隔离）
+- [x] **一键修复**（codeaudit/fixer.py + /api/fix/preview|apply + 报告页按钮）：
+      围栏代码块提取 + 证据唯一锚定（锚不上拒绝）+ .bak 时间戳备份
+- [x] **MCP resources/prompts**：知识条目只读资源（index + 逐条 URI）、
+      audit_file / review_false_positive 两个提示模板；真实子进程验证通过
+- [x] **知识库评审门禁**（tools/kb_review.py + examples/kb-review-gate.yml）：
+      schema/来源/正则/ID 冲突机器预审 + bench-real 零误杀红线回归
+- [x] 离线测试 203 → 234 项；pytest 30 项；v3 端到端冒烟 14 项全过
+
 ## 待办（按价值排序，未承诺时间）
 
-1. **向量检索恢复**：填一个有效 embeddings 端点到设置页（DeepSeek 无此接口，
-   现走关键词降级）；恢复后跑 bench-real 确认检索质量不回退
-2. **MCP 资源与提示模板**：tools 之外补 resources（知识库条目只读暴露）与
-   prompts（审计话术模板），对齐 MCP 完整能力面
-3. **历史对比**：两次审计 diff 视图（新增/消除问题），配合增量审计做回归看板
-4. **多语言扩展**：JS/TS 规则层试点（tree-sitter），架构不变、弹药分库
-5. **知识库众包评审流**：custom.json 变更走 PR 评审 + bench-real 自动回测门禁
-6. **报告分享**：单文件 HTML 加水印/脱敏选项，便于对外提交
-7. **性能**：大目录静态扫描并行化（进程池），进度条按文件数精确推进
+1. **向量臂补数**：拿到有效 embeddings 端点后在设置页填 EMBEDDING_*，
+   重跑 tools/rag_ablation.py 即得两臂对照表（框架已就绪）
+2. **污点追踪真实库量化**：在六库上统计候选路径数与人工核验精度，
+   形成论文实验节（当前已有单测与注入链路，缺真实库数据）
+3. **JS/TS 深化**：tree-sitter AST 级精度、语义层审计接入（当前仅静态规则层）
+4. **报告分享**：单文件 HTML 加水印/脱敏选项，便于对外提交
+5. **性能**：大目录静态扫描并行化（进程池），进度条按文件数精确推进
 
 ## 红线（任何新功能不得触碰）
 

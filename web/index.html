@@ -179,10 +179,20 @@
       <span style="flex:1"></span>
       <button class="btn ghost sm" id="hist-refresh">刷新</button>
     </div>
+    <div class="toolbar" id="diff-bar" style="display:none">
+      <span class="muted">已选 <b id="diff-count">0</b>/2 份</span>
+      <button class="btn sm" id="diff-run" disabled>对比选中两份</button>
+      <button class="btn ghost sm" id="diff-clear">清空选择</button>
+    </div>
     <table id="hist-table">
-      <thead><tr><th>时间</th><th>目标</th><th>模式</th><th>问题数</th><th>严重度分布</th><th>操作</th></tr></thead>
+      <thead><tr><th style="width:30px"></th><th>时间</th><th>目标</th><th>模式</th><th>问题数</th><th>严重度分布</th><th>操作</th></tr></thead>
       <tbody></tbody>
     </table>
+    <div id="diff-view" style="display:none;margin-top:12px">
+      <div class="toolbar"><b>对比结果</b><span style="flex:1"></span><button class="btn ghost sm" id="diff-close">收起</button></div>
+      <div id="diff-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <pre class="code" id="diff-md" style="max-height:50vh;overflow:auto"></pre>
+    </div>
     <div id="hist-empty" class="muted" style="display:none;padding:20px;text-align:center">暂无历史记录</div>
     <div class="hist-view" id="hist-view" style="display:none">
       <div class="toolbar">
@@ -507,19 +517,50 @@ async function loadHistory() {
       const sv = it.by_severity || {};
       const dist = ["critical","high","medium","low"].filter(k => sv[k]).map(k => `<span class="tag ${k}">${k} ${sv[k]}</span>`).join(" ") || '<span class="muted">—</span>';
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${esc(it.time_str)}</td><td title="${esc(it.target)}">${esc(it.target.length > 46 ? "…" + it.target.slice(-45) : it.target)}</td>` +
+      tr.innerHTML = `<td><input type="checkbox" class="hist-ck" data-id="${esc(it.id)}" ${diffSel.includes(it.id) ? "checked" : ""}></td>` +
+        `<td>${esc(it.time_str)}</td><td title="${esc(it.target)}">${esc(it.target.length > 46 ? "…" + it.target.slice(-45) : it.target)}</td>` +
         `<td><span class="tag">${esc(it.mode)}${it.depth ? " · " + esc(it.depth) : ""}</span></td><td><b>${it.total}</b></td><td>${dist}</td>` +
         `<td><button class="btn ghost sm" data-act="view">查看</button> <button class="btn danger sm" data-act="del">删除</button></td>`;
+      tr.querySelector(".hist-ck").onchange = e => {
+        const id = e.target.dataset.id;
+        if (e.target.checked) { if (diffSel.length >= 2) { e.target.checked = false; toast("最多选两份对比", "err"); return; } diffSel.push(id); }
+        else diffSel = diffSel.filter(x => x !== id);
+        updateDiffBar();
+      };
       tr.querySelector('[data-act="view"]').onclick = () => viewHistory(it);
       tr.querySelector('[data-act="del"]').onclick = async () => {
         if (!confirm(`删除 ${it.time_str} 的历史记录？`)) return;
-        try { await del(`/api/history/${it.id}`); toast("已删除", "ok"); loadHistory(); } catch (e) { toast(e.message, "err"); }
+        try { await del(`/api/history/${it.id}`); diffSel = diffSel.filter(x => x !== it.id); toast("已删除", "ok"); loadHistory(); } catch (e) { toast(e.message, "err"); }
       };
       tb.appendChild(tr);
     });
+    updateDiffBar();
   } catch (e) { toast(e.message, "err"); }
 }
 $("#hist-refresh").onclick = loadHistory;
+let diffSel = [];
+function updateDiffBar() {
+  $("#diff-bar").style.display = diffSel.length ? "flex" : "none";
+  $("#diff-count").textContent = diffSel.length;
+  $("#diff-run").disabled = diffSel.length !== 2;
+}
+$("#diff-clear").onclick = () => { diffSel = []; loadHistory(); };
+$("#diff-close").onclick = () => { $("#diff-view").style.display = "none"; };
+$("#diff-run").onclick = async () => {
+  if (diffSel.length !== 2) return;
+  try {
+    const d = await api(`/api/history-diff?old=${diffSel[0]}&new=${diffSel[1]}`);
+    const s = d.summary;
+    $("#diff-chips").innerHTML =
+      `<span class="chip">${s.old_total} → <b>${s.new_total}</b> 条</span>` +
+      `<span class="chip" style="color:var(--err)">新增 <b>${s.added}</b></span>` +
+      `<span class="chip" style="color:var(--ok)">消除 <b>${s.removed}</b></span>` +
+      `<span class="chip">移动 ${s.moved} · 存续 ${s.kept}</span>`;
+    $("#diff-md").textContent = d.markdown;
+    $("#diff-view").style.display = "block";
+    $("#diff-view").scrollIntoView({behavior:"smooth"});
+  } catch (e) { toast(e.message, "err"); }
+};
 async function viewHistory(it) {
   try {
     const d = await api(`/api/history/${it.id}`);

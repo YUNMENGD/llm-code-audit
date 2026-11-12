@@ -62,6 +62,8 @@ def load_rules() -> list[dict]:
     if not RULES_DIR.exists():
         return rules
     for f in sorted(RULES_DIR.glob("*.json")):
+        if f.name == "js_rules.json":
+            continue          # JS/TS 弹药由 jsrules 引擎独立加载，不混入 Python 扫描
         data = json.loads(f.read_text(encoding="utf-8"))
         rules.extend(data.get("rules", []))
     return rules

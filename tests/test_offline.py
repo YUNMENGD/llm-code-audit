@@ -748,4 +748,122 @@ _cfg = MC.client_config()
 check("客户端配置含启动命令", "llm-code-audit" in _cfg["config"]["mcpServers"]
       and _cfg["config"]["mcpServers"]["llm-code-audit"]["command"])
 
+print("\n[27] taint：跨文件污点传播（source→sink 路径证据）")
+from codeaudit import taint as TT                      # noqa: E402
+
+with tempfile.TemporaryDirectory() as _td:
+    _tp = Path(_td)
+    (_tp / "web.py").write_text(
+        "import os\n"
+        "def handler(request):\n"
+        "    name = request.args.get('name')\n"
+        "    run(name)\n"
+        "def run(cmd):\n"
+        "    os.system(cmd)\n", encoding="utf-8")
+    (_tp / "safe.py").write_text(
+        "def ok():\n"
+        "    x = 'constant'\n"
+        "    print(x)\n", encoding="utf-8")
+    _tt = TT.TaintTracker().build(_tp)
+    check("污点路径被发现", _tt.stats()["paths"] >= 1)
+    _p = _tt.paths_for_file(_tp / "web.py")
+    check("sink 定位 os.system", any(x["call"] == "os.system" for x in _p))
+    check("来源标注调用方传入", any("调用方传入" in x["origin"] or "外部输入" in x["origin"]
+                                for x in _p))
+    check("无污点文件零路径", _tt.paths_for_file(_tp / "safe.py") == [])
+    check("文件级证据文本可注入", "os.system" in _tt.file_text(_tp / "web.py"))
+    check("函数级证据文本可注入", "os.system" in _tt.function_text(_tp / "web.py", "run"))
+
+print("\n[28] diff：新增/消除/移动对齐")
+from codeaudit import diff as DF                       # noqa: E402
+
+def _mk_issue(rule, path, line, sev="high"):
+    return Issue(rule_id=rule, category=Category.SECURITY, severity=Severity(sev),
+                 title=f"{rule}@{line}", path=path, line_start=line,
+                 evidence="e", analysis="", fix="")
+
+_old = AuditReport(target="t", issues=[_mk_issue("R-A", "a.py", 10),
+                                       _mk_issue("R-B", "a.py", 20),
+                                       _mk_issue("R-C", "b.py", 5)])
+_new = AuditReport(target="t", issues=[_mk_issue("R-A", "a.py", 12),
+                                       _mk_issue("R-C", "b.py", 5),
+                                       _mk_issue("R-D", "c.py", 1)])
+_d = DF.diff_reports(_old, _new, drift=3)
+check("新增识别", _d["summary"]["added"] == 1 and _d["added"][0]["rule_id"] == "R-D")
+check("消除识别", _d["summary"]["removed"] == 1 and _d["removed"][0]["rule_id"] == "R-B")
+check("行号漂移算移动", _d["summary"]["moved"] == 1
+      and _d["moved"][0]["old_line"] == 10 and _d["moved"][0]["new_line"] == 12)
+check("存续识别", _d["summary"]["kept"] == 1)
+check("漂移超容忍算新增+消除",
+      DF.diff_reports(_old, _new, drift=1)["summary"]["moved"] == 0)
+check("Markdown 渲染含三段", "新增问题" in DF.render_diff_markdown(_d)
+      and "已消除" in DF.render_diff_markdown(_d))
+
+print("\n[29] jsrules：JS/TS 规则命中与豁免")
+from codeaudit import jsrules as JR                    # noqa: E402
+
+_js_rules = JR.load_js_rules()
+check("JS 规则库加载", len(_js_rules) >= 12)
+_pos = JR.scan_js_source('const r = eval(x);\nel.innerHTML = y;\n', _js_rules, "t.js")
+check("eval 命中", any(i.rule_id == "JS-SEC-001" for i in _pos))
+check("innerHTML 命中", any(i.rule_id == "JS-SEC-003" for i in _pos))
+_neg = JR.scan_js_source(
+    '// eval(x) 注释不命中\n'
+    '/* document.write("x") */\n'
+    'el.textContent = y;\n'
+    'db.query("SELECT ?", [id]);\n'
+    '// eslint-disable-next-line no-eval\n'
+    'eval(trusted);\n'
+    'el.innerHTML = "";\n', _js_rules, "t.js")
+check("注释/安全写法/抑制标记零命中", _neg == [])
+_ts = JR.scan_js_source('const apiKey = "sk-live-abcdef1234567890abcdef";\n',
+                        _js_rules, "t.ts")
+check("TS 硬编码密钥命中", any(i.rule_id == "JS-SEC-009" for i in _ts))
+check("bench-js 正例全命中", len(JR.scan_js_source(
+    (Path(__file__).resolve().parent.parent / "examples" / "bench-js" / "pos01_eval.js")
+    .read_text(encoding="utf-8"), _js_rules, "pos01_eval.js")) == 3)
+check("bench-js 反例零命中", JR.scan_js_source(
+    (Path(__file__).resolve().parent.parent / "examples" / "bench-js" / "neg01_safe.js")
+    .read_text(encoding="utf-8"), _js_rules, "neg01_safe.js") == [])
+
+print("\n[30] fixer：证据锚定 + diff 预览 + 备份应用")
+from codeaudit import fixer as FX                      # noqa: E402
+
+with tempfile.TemporaryDirectory() as _td:
+    _fp = Path(_td) / "vuln.py"
+    _fp.write_text('import os\ndef f(x):\n    os.system("ls " + x)\n', encoding="utf-8")
+    _iss_d = {"fix": '改用参数列表：\n```python\n    subprocess.run(["ls", x])\n```',
+              "evidence": 'os.system("ls " + x)', "line_start": 3, "line_end": 3}
+    _pv = FX.preview(_fp, _iss_d)
+    check("diff 预览生成", _pv["ok"] and "-    os.system" in _pv["diff"]
+          and "+    subprocess.run" in _pv["diff"])
+    _bad = FX.preview(_fp, {**_iss_d, "evidence": "不存在的证据"})
+    check("证据锚定失败拒绝", not _bad["ok"])
+    _nofence = FX.preview(_fp, {**_iss_d, "fix": "纯文字建议没有代码块"})
+    check("无代码块拒绝", not _nofence["ok"])
+    _ap = FX.apply(_fp, _iss_d)
+    check("应用成功且备份存在", _ap["ok"] and Path(_ap["backup"]).exists())
+    check("文件内容已替换", "subprocess.run" in _fp.read_text(encoding="utf-8")
+          and "os.system" not in _fp.read_text(encoding="utf-8"))
+    check("备份保留原文", "os.system" in Path(_ap["backup"]).read_text(encoding="utf-8"))
+
+print("\n[31] MCP resources/prompts + 评审门禁 schema")
+_res = MS.handle({"jsonrpc": "2.0", "id": 10, "method": "resources/list"})
+check("资源列表含知识索引", any(r["uri"] == "codeaudit://knowledge/index"
+                            for r in _res["result"]["resources"]))
+_rd = MS.handle({"jsonrpc": "2.0", "id": 11, "method": "resources/read",
+                 "params": {"uri": "codeaudit://knowledge/CWE-89"}})
+check("资源读取 CWE-89", "SQL" in _rd["result"]["contents"][0]["text"])
+_pl = MS.handle({"jsonrpc": "2.0", "id": 12, "method": "prompts/list"})
+check("提示模板两个", len(_pl["result"]["prompts"]) == 2)
+_pg = MS.handle({"jsonrpc": "2.0", "id": 13, "method": "prompts/get",
+                 "params": {"name": "audit_file", "arguments": {"code": "x=1"}}})
+check("模板渲染含代码", "x=1" in _pg["result"]["messages"][0]["content"]["text"])
+_bad_res = MS.handle({"jsonrpc": "2.0", "id": 14, "method": "resources/read",
+                      "params": {"uri": "codeaudit://knowledge/NO-SUCH"}})
+check("未知资源报错", "error" in _bad_res)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import kb_review as KR                                 # noqa: E402
+check("评审门禁 schema 当前全过", KR.check_schema() == [])
+
 print(f"\n全部通过：{PASS} 项 ✓")

@@ -226,7 +226,9 @@ const itemHTML = i => `<div class="item"><div class="ihead">
   ${i.analysis?`<h4>分析</h4>${esc(i.analysis)}`:""}${i.impact?`<h4>影响</h4>${esc(i.impact)}`:""}
   ${i.fix?`<h4>修复建议</h4><pre>${esc(i.fix)}</pre>`:""}
   ${i.source?`<h4>知识来源</h4>${esc(i.source)}`:""}
-  <button class="fpbtn" data-id="${i.id}">标记误报（回流知识库）</button></div></div>`;
+  <button class="fpbtn" data-id="${i.id}">标记误报（回流知识库）</button>
+  ${/```/.test(i.fix||"")?`<button class="fpbtn fixbtn" data-id="${i.id}">预览修复 diff</button>`:""}
+  <div class="fixbox" id="fixbox-${i.id}" style="display:none"></div></div></div>`;
 function render(){
   const kept = D.items.filter(pass), byFile = new Map();
   kept.forEach(i => { if(!byFile.has(i.path)) byFile.set(i.path, []); byFile.get(i.path).push(i); });
@@ -239,7 +241,8 @@ function render(){
       <div class="gb">${items.map(itemHTML).join("")}</div></div>`; }).join("");
   el.querySelectorAll(".gh").forEach(h=>h.onclick=()=>h.parentElement.classList.toggle("closed"));
   el.querySelectorAll(".ihead").forEach(h=>h.onclick=e=>{ if(!e.target.closest(".ibody")) h.parentElement.classList.toggle("open"); });
-  el.querySelectorAll(".fpbtn").forEach(b=>b.onclick=e=>{ e.stopPropagation(); markFP(+b.dataset.id, b); });
+  el.querySelectorAll(".fpbtn:not(.fixbtn)").forEach(b=>b.onclick=e=>{ e.stopPropagation(); markFP(+b.dataset.id, b); });
+  el.querySelectorAll(".fixbtn").forEach(b=>b.onclick=e=>{ e.stopPropagation(); fixPreview(+b.dataset.id, b); });
   marked.forEach(id => { const b = el.querySelector(`.fpbtn[data-id="${id}"]`); if(b){ b.classList.add("done"); b.textContent = "已标记，将回流知识库"; } });
 }
 const marked = new Set();
@@ -261,6 +264,33 @@ async function markFP(id, btn){
       btn.textContent = "无后端连接，反馈 JSON 已复制到剪贴板"; }
     catch (__) { btn.textContent = "标记失败：请在桌面端使用或手动记录"; }
   }
+}
+async function fixPreview(id, btn){
+  const i = D.items.find(x => x.id === id); if (!i) return;
+  const box = document.getElementById("fixbox-" + id);
+  if (box.style.display !== "none") { box.style.display = "none"; return; }
+  box.style.display = "block"; box.innerHTML = '<span class="imeta">生成 diff 中…</span>';
+  try {
+    const r = await fetch("/api/fix/preview", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({path: i.path, issue: {fix: i.fix, evidence: i.evidence,
+        line_start: i.line, line_end: i.end}})});
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = `<span class="imeta">⚠ ${esc(j.error||j.detail||"预览失败")}</span>`; return; }
+    box.innerHTML = `<h4>修复 diff（第 ${j.span[0]}-${j.span[1]} 行）</h4><pre>${esc(j.diff)}</pre>
+      <button class="fpbtn applybtn">应用修复（自动备份 .bak）</button>`;
+    box.querySelector(".applybtn").onclick = async () => {
+      if (!confirm("确认应用修复？原文件会先备份为 .bak-时间戳")) return;
+      const r2 = await fetch("/api/fix/apply", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({path: i.path, issue: {fix: i.fix, evidence: i.evidence,
+          line_start: i.line, line_end: i.end}})});
+      const j2 = await r2.json();
+      box.innerHTML = r2.ok
+        ? `<span class="imeta" style="color:#2fbf8f">✔ 已应用，备份：${esc(j2.backup)}</span>`
+        : `<span class="imeta">⚠ ${esc(j2.error||j2.detail||"应用失败")}</span>`;
+    };
+  } catch (_) { box.innerHTML = '<span class="imeta">无后端连接：请在桌面端使用修复功能</span>'; }
 }
 document.getElementById("expand").onclick=()=>document.querySelectorAll(".grp").forEach(g=>g.classList.remove("closed"));
 document.getElementById("collapse").onclick=()=>document.querySelectorAll(".grp").forEach(g=>g.classList.add("closed"));

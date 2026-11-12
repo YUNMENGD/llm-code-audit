@@ -1,0 +1,146 @@
+{
+  "meta": {
+    "name": "JS/TS 硬性规则库（多语言试点首批）",
+    "version": "1.0",
+    "note": "与 Python 硬规则同口径：pattern 为逐行正则，exclude 同行豁免，// eslint-disable / nosec 抑制。新增须附来源并经评审。",
+    "maintainer": "team"
+  },
+  "rules": [
+    {
+      "id": "JS-SEC-001",
+      "title": "eval 动态执行",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-95 https://cwe.mitre.org/data/definitions/95.html",
+      "pattern": "(?<![.\\w])eval\\s*\\(",
+      "why": "eval 把字符串当代码执行，外部输入可注入任意脚本。",
+      "impact": "任意代码执行 / XSS。",
+      "suggestion": "用 JSON.parse 解析数据；逻辑分支显式书写。"
+    },
+    {
+      "id": "JS-SEC-002",
+      "title": "new Function 动态构造",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-95",
+      "pattern": "new\\s+Function\\s*\\(",
+      "why": "Function 构造器等价 eval，字符串参数可被注入。",
+      "impact": "任意代码执行。",
+      "suggestion": "改为显式函数定义或映射表分发。"
+    },
+    {
+      "id": "JS-SEC-003",
+      "title": "innerHTML 直接赋值",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-79 https://cwe.mitre.org/data/definitions/79.html",
+      "pattern": "\\.innerHTML\\s*=(?!=)",
+      "exclude": ["= \"\"", "= ''", "= ``"],
+      "why": "未转义内容写入 innerHTML，浏览器按 HTML 解析可执行脚本。",
+      "impact": "存储型/反射型 XSS，窃取会话。",
+      "suggestion": "用 textContent 写文本；富文本经 DOMPurify 等白名单净化。"
+    },
+    {
+      "id": "JS-SEC-004",
+      "title": "document.write 输出",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-79",
+      "pattern": "document\\.write(?:ln)?\\s*\\(",
+      "why": "document.write 直接注入 HTML，外部输入即 XSS。",
+      "impact": "XSS / 页面覆写。",
+      "suggestion": "DOM API 创建节点并 textContent 赋值。"
+    },
+    {
+      "id": "JS-SEC-005",
+      "title": "child_process.exec 拼接命令",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-78 https://cwe.mitre.org/data/definitions/78.html",
+      "pattern": "child_process\\.exec\\s*\\(|(?<![.\\w])exec\\s*\\(\\s*[`\"'].*\\$\\{",
+      "why": "exec 经 shell 解释，模板串插值可注入分号/管道。",
+      "impact": "服务器远程命令执行。",
+      "suggestion": "execFile/spawn 传参数数组，不经 shell。"
+    },
+    {
+      "id": "JS-SEC-006",
+      "title": "SQL 模板串拼接",
+      "category": "security",
+      "severity": "critical",
+      "source": "CWE-89 https://cwe.mitre.org/data/definitions/89.html",
+      "pattern": "(?:query|execute)\\s*\\(\\s*`[^`]*\\$\\{",
+      "why": "SQL 语句用模板串插值构造，输入改变语句结构。",
+      "impact": "注入读取/篡改任意数据。",
+      "suggestion": "参数化占位符（? / $1）+ 参数数组。"
+    },
+    {
+      "id": "JS-SEC-007",
+      "title": "Math.random 用于安全场景",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-330 https://cwe.mitre.org/data/definitions/330.html",
+      "pattern": "Math\\.random\\s*\\(",
+      "exclude": ["// non-security", "// visual", "// animation"],
+      "why": "Math.random 非密码学安全，token/验证码可被预测。",
+      "impact": "会话令牌/重置链接可枚举。",
+      "suggestion": "crypto.randomBytes / crypto.getRandomValues。"
+    },
+    {
+      "id": "JS-SEC-008",
+      "title": "关闭 TLS 证书校验",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-295 https://cwe.mitre.org/data/definitions/295.html",
+      "pattern": "rejectUnauthorized\\s*:\\s*false|NODE_TLS_REJECT_UNAUTHORIZED\\s*=\\s*['\"]?0",
+      "why": "关闭证书校验使 HTTPS 可被中间人劫持。",
+      "impact": "凭据与数据在传输层被窃取。",
+      "suggestion": "移除该配置；自签证书用受控 CA 而不是全局关闭。"
+    },
+    {
+      "id": "JS-SEC-009",
+      "title": "疑似硬编码密钥",
+      "category": "security",
+      "severity": "high",
+      "source": "CWE-798 https://cwe.mitre.org/data/definitions/798.html",
+      "pattern": "(?i)(?:api_?key|apikey|secret|password|passwd|token)\\s*[:=]\\s*[\"'][A-Za-z0-9_\\-]{16,}[\"']",
+      "exclude": ["process.env", "example", "placeholder", "xxxx"],
+      "why": "长随机串字面量赋给密钥字段，疑似真实凭据入库。",
+      "impact": "仓库泄露即凭据泄露。",
+      "suggestion": "密钥走环境变量/密钥管理；历史提交用 gitleaks 清理。"
+    },
+    {
+      "id": "JS-LOG-001",
+      "title": "空 catch 吞异常",
+      "category": "logic",
+      "severity": "medium",
+      "source": "CWE-390 https://cwe.mitre.org/data/definitions/390.html",
+      "pattern": "catch\\s*(?:\\([^)]*\\))?\\s*\\{\\s*\\}",
+      "why": "catch 块为空，故障静默消失不可观测。",
+      "impact": "错误被掩盖，排障无据。",
+      "suggestion": "至少记录日志或向上抛出；确属故意加 // eslint-disable 声明。"
+    },
+    {
+      "id": "JS-LOG-002",
+      "title": "== 宽松相等",
+      "category": "logic",
+      "severity": "low",
+      "source": "CWE-480 / ESLint eqeqeq",
+      "pattern": "[^=!<>]==[^=]",
+      "exclude": ["=== ", "!=="],
+      "why": "宽松相等触发隐式类型转换，null/0/'' 边界意外相等。",
+      "impact": "校验绕过、分支错乱。",
+      "suggestion": "一律 === / !==；确需宽松比较显式注释。"
+    },
+    {
+      "id": "JS-ENG-001",
+      "title": "debugger 语句滞留",
+      "category": "engineering",
+      "severity": "low",
+      "source": "ESLint no-debugger",
+      "pattern": "(?<![.\\w])debugger\\s*;?",
+      "why": "调试断点进生产，命中即挂起用户浏览器。",
+      "impact": "生产可用性事故。",
+      "suggestion": "删除 debugger；CI 挂 no-debugger 规则。"
+    }
+  ]
+}

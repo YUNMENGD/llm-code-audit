@@ -1,0 +1,30 @@
+# 知识库评审门禁：PR 改动 knowledge/ 时自动跑机器预审 + 零误杀回归
+# 复制到 .github/workflows/kb-review.yml 启用
+name: KB Review Gate
+
+on:
+  pull_request:
+    paths:
+      - "knowledge/**"
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Download bench libs (回归需要真实库源码)
+        run: |
+          mkdir -p ../realtest
+          for lib in click flask requests trio werkzeug; do
+            git clone --depth 1 https://github.com/pallets/$lib.git ../realtest/$lib 2>/dev/null || true
+          done
+          git clone --depth 1 https://github.com/boto/botocore.git ../realtest/botocore
+          git clone --depth 1 https://github.com/python-trio/trio.git ../realtest/trio
+          git clone --depth 1 https://github.com/psf/requests.git ../realtest/requests
+      - name: Machine pre-review + zero-false-kill regression
+        run: python tools/kb_review.py

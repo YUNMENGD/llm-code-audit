@@ -205,6 +205,86 @@ _HANDLERS = {
 }
 
 
+# ---------- resources：知识库条目只读暴露 ----------
+
+def _resources_list() -> list[dict]:
+    from . import kbadmin as KA
+    out = [{"uri": "codeaudit://knowledge/index",
+            "name": "知识库索引",
+            "description": "全部缺陷知识条目摘要（JSON）",
+            "mimeType": "application/json"}]
+    for it in KA.list_items():
+        out.append({"uri": f"codeaudit://knowledge/{it['id']}",
+                    "name": f"{it['id']} {it.get('title', '')}",
+                    "description": (it.get("pattern") or "")[:100],
+                    "mimeType": "application/json"})
+    return out
+
+
+def _resources_read(uri: str) -> dict:
+    import json as _json
+
+    from . import kbadmin as KA
+    if uri == "codeaudit://knowledge/index":
+        rows = [{"id": it["id"], "title": it.get("title"),
+                 "severity": it.get("severity"), "category": it.get("category")}
+                for it in KA.list_items()]
+        text = _json.dumps(rows, ensure_ascii=False, indent=1)
+    elif uri.startswith("codeaudit://knowledge/"):
+        kid = uri.rsplit("/", 1)[-1]
+        match = [it for it in KA.list_items() if it["id"] == kid]
+        if not match:
+            raise ValueError(f"条目不存在：{kid}")
+        text = _json.dumps(match[0], ensure_ascii=False, indent=1)
+    else:
+        raise ValueError(f"未知资源 URI：{uri}")
+    return {"contents": [{"uri": uri, "mimeType": "application/json",
+                          "text": text}]}
+
+
+# ---------- prompts：审计话术模板 ----------
+
+_PROMPT_DEFS = [
+    {"name": "audit_file",
+     "description": "生成一份文件级代码审计请求（分层降噪口径：先证据后裁决）",
+     "arguments": [{"name": "code", "description": "待审计代码", "required": True},
+                   {"name": "language", "description": "语言（默认 Python）",
+                    "required": False}]},
+    {"name": "review_false_positive",
+     "description": "对一条告警做误报复核（要求给出可辩护的判定依据）",
+     "arguments": [{"name": "alert", "description": "告警 JSON 或描述",
+                    "required": True},
+                   {"name": "code", "description": "相关代码上下文",
+                    "required": False}]},
+]
+
+
+def _prompts_list() -> list[dict]:
+    return _PROMPT_DEFS
+
+
+def _prompts_get(name: str, args: dict) -> dict:
+    if name == "audit_file":
+        code = str(args.get("code", ""))
+        lang = str(args.get("language", "Python"))
+        text = (f"你是资深代码审计专家。请审计以下 {lang} 代码，"
+                "只报告有代码证据支撑的问题，每条给出：规则/CWE ID、严重度"
+                "（critical/high/medium/low）、行号、证据原文、分析、修复建议。"
+                "没有把握的不要报。只输出 JSON 数组。\n\n```\n" + code + "\n```")
+    elif name == "review_false_positive":
+        alert = str(args.get("alert", ""))
+        code = str(args.get("code", ""))
+        text = ("请复核以下告警是否误报。判定必须基于代码证据："
+                "若存在护栏/豁免惯例/适用边界越界，判 F 并说明模式；"
+                "若缺陷真实存在，判 T 并给出触发路径；证据不足判 ?。\n\n"
+                f"告警：{alert}\n\n代码上下文：\n```\n{code}\n```")
+    else:
+        raise ValueError(f"未知提示模板：{name}")
+    return {"description": name,
+            "messages": [{"role": "user",
+                          "content": {"type": "text", "text": text}}]}
+
+
 def handle(msg: dict) -> dict | None:
     """处理一条 JSON-RPC 消息；通知（无 id）返回 None。"""
     method = msg.get("method", "")
@@ -222,12 +302,27 @@ def handle(msg: dict) -> dict | None:
         return None
     if method == "initialize":
         return ok({"protocolVersion": PROTOCOL_VERSION,
-                   "capabilities": {"tools": {}},
+                   "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
                    "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION}})
     if method == "ping":
         return ok({})
     if method == "tools/list":
         return ok({"tools": _TOOLS})
+    if method == "resources/list":
+        return ok({"resources": _resources_list()})
+    if method == "resources/read":
+        try:
+            return ok(_resources_read(params.get("uri", "")))
+        except Exception as e:           # noqa: BLE001
+            return err(-32602, f"资源读取失败：{e}")
+    if method == "prompts/list":
+        return ok({"prompts": _prompts_list()})
+    if method == "prompts/get":
+        try:
+            return ok(_prompts_get(params.get("name", ""),
+                                   params.get("arguments") or {}))
+        except Exception as e:           # noqa: BLE001
+            return err(-32602, f"提示模板获取失败：{e}")
     if method == "tools/call":
         name = params.get("name", "")
         handler = _HANDLERS.get(name)

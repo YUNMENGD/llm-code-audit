@@ -140,6 +140,8 @@ def list_rules() -> list[dict]:
     if not RULES_DIR.exists():
         return out
     for f in sorted(RULES_DIR.glob("*.json")):
+        if f.name == "js_rules.json":
+            continue          # JS 弹药独立管理，不进 Python 规则管理页
         custom = f.name == CUSTOM_RULES_FILE.name
         for r in _read_rules(f):
             d = dict(r)

@@ -69,12 +69,27 @@ def main(argv: list[str] | None = None) -> int:
                      help="库名（realtest/ 下目录名，如 click）；留空则评测 bench-real/ 全部")
     sub.add_parser("selfcheck", help="环境自检")
     sub.add_parser("mcp", help="启动 MCP 服务器（stdio），供 Claude Desktop/Cursor 等客户端接入")
+    df = sub.add_parser("diff", help="对比两份审计报告（JSON），输出新增/消除/移动")
+    df.add_argument("old", help="旧报告 JSON 路径")
+    df.add_argument("new", help="新报告 JSON 路径")
+    df.add_argument("--drift", type=int, default=3, help="行号漂移容忍（默认3）")
+    df.add_argument("-o", "--out", default=None, help="对比结果 Markdown 输出路径")
 
     a = ap.parse_args(argv)
 
     if a.cmd == "mcp":
         from .mcpserver import serve
         return serve()
+    if a.cmd == "diff":
+        from .diff import diff_reports, render_diff_markdown
+        d = diff_reports(a.old, a.new, drift=a.drift)
+        md = render_diff_markdown(d, old_label=Path(a.old).name,
+                                  new_label=Path(a.new).name)
+        print(md)
+        if a.out:
+            Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(a.out).write_text(md, encoding="utf-8")
+        return 1 if d["summary"]["added"] else 0
     if a.cmd == "selfcheck":
         return _selfcheck()
     if a.cmd == "rules":
@@ -130,17 +145,27 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "check":
         from .report import render_markdown
         from .models import AuditReport
-        files = [Path(a.target)] if Path(a.target).is_file() else sorted(
-            p for p in Path(a.target).rglob("*.py")
-            if not any(x in p.parts for x in P.IGNORE_DIRS))
+        from . import jsrules as JR
+        tp = Path(a.target)
+        if tp.is_file():
+            files = [tp]
+        else:
+            files = sorted(
+                p for p in tp.rglob("*")
+                if p.is_file() and p.suffix in ({".py"} | JR.JS_EXTS)
+                and not any(x in p.parts for x in P.IGNORE_DIRS))
         if only is not None:
             files = [p for p in files if str(p.resolve()) in only]
             print(f"增量模式：{len(files)} 个变更文件（上下文外文件已跳过）")
         all_rules = RL.load_rules()
+        js_rules = JR.load_js_rules()
         issues = []
         for f in files:
-            issues += RL.scan_source(f.read_text(encoding="utf-8", errors="replace"),
-                                     all_rules, str(f))
+            src = f.read_text(encoding="utf-8", errors="replace")
+            if f.suffix in JR.JS_EXTS:
+                issues += JR.scan_js_source(src, js_rules, str(f))
+            else:
+                issues += RL.scan_source(src, all_rules, str(f))
         rep = AuditReport(target=a.target, issues=issues,
                           engine={"model": "static-only", "llm_used": False,
                                   "units": len(files), "rules_loaded": len(all_rules),

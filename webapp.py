@@ -106,13 +106,17 @@ def _dispatch(req: AuditReq, job: dict | None = None):
         if not only:
             print("[incremental] 相对 HEAD 没有 .py 变更，本次无需扫描")
     if req.mode == "static":
+        from codeaudit import jsrules as JR
         from codeaudit.models import AuditReport
         target = Path(req.target)
         rs = RL.load_rules()
+        js_rs = JR.load_js_rules()
         rep = AuditReport(target=str(target))
         files = [target] if target.is_file() else sorted(
-            p for p in target.rglob("*.py")
-            if not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv")))
+            p for p in target.rglob("*")
+            if p.is_file() and p.suffix in ({".py"} | JR.JS_EXTS)
+            and not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv",
+                                               "node_modules")))
         if only is not None:
             files = [p for p in files if str(p.resolve()) in only]
         skipped = 0
@@ -125,7 +129,10 @@ def _dispatch(req: AuditReq, job: dict | None = None):
                 skipped += 1
                 print(f"[{i}/{len(files)}] 跳过不可读文件 {f.name}：{e}")
                 continue
-            rep.issues.extend(RL.scan_source(src, rs, str(f)))
+            if f.suffix in JR.JS_EXTS:
+                rep.issues.extend(JR.scan_js_source(src, js_rs, str(f)))
+            else:
+                rep.issues.extend(RL.scan_source(src, rs, str(f)))
             print(f"[{i}/{len(files)}] 扫描 {f.name}")
         rep.engine = {"model": "static-rules", "llm_used": False, "depth": req.depth}
         if skipped:
@@ -209,8 +216,9 @@ def start_audit(req: AuditReq) -> dict:
     target = Path(req.target)
     if not target.exists():
         raise HTTPException(404, f"路径不存在：{target}")
-    if target.is_file() and target.suffix != ".py":
-        raise HTTPException(400, "文件模式仅支持 .py（目录请传文件夹路径）")
+    from codeaudit.jsrules import JS_EXTS
+    if target.is_file() and target.suffix not in ({".py"} | JS_EXTS):
+        raise HTTPException(400, "文件模式支持 .py/.js/.ts 等（目录请传文件夹路径）")
     if req.mode == "ai" and not LLMClient().available():
         raise HTTPException(400, "AI 模式需要先在「设置」配置模型密钥；请先用「静态检查」模式")
     job_id = uuid.uuid4().hex[:12]
@@ -472,6 +480,42 @@ def rules_test(req: RuleTestReq) -> dict:
         return {"ok": True, "hits": KA.test_pattern(req.pattern, req.sample)}
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+# ---------- 审计对比 / 一键修复 ----------
+
+@app.get("/api/history-diff")
+def history_diff(old: str, new: str, drift: int = 3) -> dict:
+    from codeaudit.diff import diff_reports, render_diff_markdown
+    try:
+        a, b = HS.load_report(old), HS.load_report(new)
+    except FileNotFoundError:
+        raise HTTPException(404, "历史记录不存在")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    d = diff_reports(a, b, drift=drift)
+    d["markdown"] = render_diff_markdown(d, old_label=old, new_label=new)
+    return d
+
+
+class FixReq(BaseModel):
+    path: str
+    issue: dict
+
+
+@app.post("/api/fix/preview")
+def fix_preview(req: FixReq) -> dict:
+    from codeaudit import fixer
+    return fixer.preview(req.path, req.issue)
+
+
+@app.post("/api/fix/apply")
+def fix_apply(req: FixReq) -> dict:
+    from codeaudit import fixer
+    r = fixer.apply(req.path, req.issue)
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("error", "修复失败"))
+    return r
 
 
 # ---------- MCP 接入 ----------
