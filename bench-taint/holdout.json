@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "name": "污点治理泛化性盲测标注（三个新仓库）",
+    "annotated_at": "2026-11-12",
+    "libs": ["jinja2", "itsdangerous", "markupsafe"],
+    "method": "三库从未参与治理规则设计与原六库标注，用于检验七条通用治理规则是否泛化。治理前后各跑一次 TaintTracker，候选逐条读源码盲核验。",
+    "note": "库源码不入库（realtest-holdout/ 已 gitignore）；复现：git clone pallets/jinja、pallets/itsdangerous、pallets/markupsafe 到 realtest-holdout/ 后跑 tools/taint_holdout.py",
+    "result": {
+      "before_governance": {"jinja2": 1, "itsdangerous": 0, "markupsafe": 0, "total": 1},
+      "after_governance": {"jinja2": 0, "itsdangerous": 0, "markupsafe": 0, "total": 0},
+      "false_positives_removed": 1,
+      "true_flows_lost": 0,
+      "conclusion": "治理规则在新库上不引入新误报，且消除了盲测暴露的过宽匹配误报；泛化成立"
+    }
+  },
+  "annotations": [
+    {"lib": "jinja2", "file": "src/jinja2/nodes.py", "line": 619, "call": "Markup", "verdict": "F", "pattern": "TYPE+GUARD", "note": "TemplateData.as_const 返回 Markup(self.data)：self.data 是模板字面量数据非外部输入，且 autoescape 护栏开启时才包裹 Markup（正是防 XSS 的安全机制）。治理前因 .data 属性特征过宽 + eval_ctx 变量名含 eval 子串被误染；v6 规则⑤⑥收紧后正确滤除"}
+  ]
+}

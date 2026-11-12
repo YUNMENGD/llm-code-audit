@@ -992,4 +992,78 @@ check("JS 知识弹药入库", any(it["id"] == "JS-CWE-79" for it in RT.load_kno
 _jsh = RT.retrieve("el.innerHTML = userInput; document.write(x)", top_k=5)
 check("JS 查询命中 JS 弹药", any(h["id"].startswith("JS-") for h in _jsh))
 
+print("\n[36] jsparser：函数级切分（brace 状态机）")
+from codeaudit import jsparser as JP                   # noqa: E402
+with tempfile.TemporaryDirectory() as _td:
+    _jf = Path(_td) / "f.js"
+    _jf.write_text(
+        'function alpha(x) {\n  return eval(x);\n}\n'
+        'const beta = (y) => {\n  return y + 1;\n};\n'
+        'class C {\n  gamma(z) {\n    return z;\n  }\n}\n'
+        'const s = "} {";  // 字符串里的花括号不应干扰\n', encoding="utf-8")
+    _us = JP.split_js_functions(_jf)
+    _names = {u.name for u in _us}
+    check("function 声明切出", "alpha" in _names)
+    check("箭头函数切出", "beta" in _names)
+    check("类方法切出", "gamma" in _names)
+    check("字符串花括号不产生倒挂单元", all(u.line_end >= u.line_start for u in _us))
+    check("字符串常量不被误切为函数", "s" not in _names)
+    _empty = Path(_td) / "top.js"
+    _empty.write_text('const x = 1;\nconsole.log(x);\n', encoding="utf-8")
+    check("无函数文件返回空（回退文件级）", JP.split_js_functions(_empty) == [])
+
+print("\n[37] trend：历史趋势聚合 + SVG")
+from codeaudit import trend as TD                      # noqa: E402
+_h_bak3 = HS.HIST_DIR
+with tempfile.TemporaryDirectory() as _td:
+    HS.HIST_DIR = Path(_td) / "h"
+    try:
+        _r1 = AuditReport(target="proj", issues=[_mk_issue("R-A", "a.py", 1, "high")],
+                          stats={"total": 1, "by_severity": {"high": 1}})
+        _r2 = AuditReport(target="proj", issues=[],
+                          stats={"total": 0, "by_severity": {}})
+        HS.save(_r1); HS.save(_r2)
+        _agg = TD.aggregate()
+        check("趋势点数正确", _agg["summary"]["runs"] == 2)
+        check("问题数下降识别", _agg["summary"]["delta"] == -1)
+        _svg = TD.render_trend_svg(_agg)
+        check("SVG 含折线", "<polyline" in _svg and "<svg" in _svg)
+        check("空趋势优雅降级", "暂无历史" in TD.render_trend_svg({"points": []}))
+    finally:
+        HS.HIST_DIR = _h_bak3
+
+print("\n[38] parallel：进度回调按文件数推进")
+with tempfile.TemporaryDirectory() as _td:
+    _pp = Path(_td)
+    for _i in range(5):
+        (_pp / f"f{_i}.py").write_text("eval(x)\n", encoding="utf-8")
+    _prog = []
+    PL.scan_files_parallel(sorted(_pp.glob("*.py")), workers=1,
+                           on_progress=lambda d, t: _prog.append((d, t)))
+    check("进度回调逐文件触发", _prog == [(1, 5), (2, 5), (3, 5), (4, 5), (5, 5)])
+
+print("\n[39] taint v6：subprocess 无 shell / 护栏 / 属性根名治理")
+with tempfile.TemporaryDirectory() as _td:
+    _tp = Path(_td)
+    (_tp / "g.py").write_text(
+        "import subprocess, os\n"
+        "def safe_array():\n"
+        "    subprocess.run(['ls', '-l'])\n"
+        "def safe_guard(request):\n"
+        "    p = request.args.get('p')\n"
+        "    if os.path.isfile(p):\n"
+        "        open(p)\n"
+        "def obj_attr(self):\n"
+        "    return Markup(self.data)\n"
+        "def real(request):\n"
+        "    n = request.args.get('n')\n"
+        "    os.system(n)\n", encoding="utf-8")
+    _tg = TT.TaintTracker().build(_tp)
+    _st = _tg.stats()
+    check("subprocess 参数数组不算 sink", _st.get("filtered_noshell", 0) >= 1)
+    check("isfile 护栏覆盖 open", _st.get("filtered_guard", 0) >= 1)
+    check("self.data 任意属性不误染", not any(
+        p["call"] == "Markup" for p in _tg.paths))
+    check("真 web 输入流仍保留", any(p["call"] == "os.system" for p in _tg.paths))
+
 print(f"\n全部通过：{PASS} 项 ✓")

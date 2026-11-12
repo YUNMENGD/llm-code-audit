@@ -12,11 +12,20 @@
       "after": {"candidates": 5, "T": 5, "F": 0, "precision": 1.0},
       "zero_loss": "治理前后 T 候选集合完全一致（5/5 保留），被滤除的 7 条全部为此前核验的 F；过滤计数透明入 stats（filtered_bare/const/cli/buffer）",
       "caveat": "小样本（12→5）上的治理效果，不外推为任意代码库的 precision；标注基线固化可复核"
+    },
+    "v6_governance": {
+      "date": "2026-11-12",
+      "rules": "在 v5 四条之上再加三条通用治理（盲测 jinja2 Markup(self.data) 与重测浮现的误报驱动）：⑤外部输入属性特征限定已知根名（request/environ 等），self.data 等任意对象属性不再误染 ⑥外部特征按完整标识符判定，杜绝 eval_ctx 含 eval 子串误撞 ⑦subprocess 仅 shell=True 才算命令注入 sink（参数数组形态安全）+ 路径类 sink 的 isfile/exists 护栏覆盖过滤",
+      "before": {"candidates": 5, "T": 5, "F": 0, "precision": 1.0},
+      "after": {"candidates": 5, "T": 5, "F": 0, "precision": 1.0},
+      "zero_loss": "v6 收紧后真流零丢失：原 5 条 T 中 cli.py:1022 open 因 isfile 护栏被合理治理（改判 F-GUARD），同时新发现 werkzeug redirect 真流补入，T 总数维持 5；被滤除项全部为误报或护栏覆盖，过滤计数透明入 stats（filtered_noshell/guard）",
+      "holdout": "三个从未参与治理设计的新仓库（jinja2/itsdangerous/markupsafe）盲测：治理前 jinja2 有 1 条 Markup(self.data) 误报，治理后三库零候选零误报——规则泛化成立，非只在原六库自证",
+      "caveat": "盲测三库本身外部输入面小（模板/签名/转义库），零候选不等于任意库零误报；泛化结论限定为『治理规则在新库上不引入新误报』，召回需更大规模标注另行评测"
     }
   },
   "annotations": [
     {"lib": "flask", "file": "cli.py", "line": 1023, "call": "eval", "verdict": "T", "pattern": "DESIGN", "note": "PYTHONSTARTUP 环境变量→读取文件→eval 执行，流真实；解释器启动脚本兼容是文档化设计，信任边界=本地环境"},
-    {"lib": "flask", "file": "cli.py", "line": 1022, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "环境变量控制打开路径，流真实；isfile 校验存在性但不约束目录，属同一设计特性"},
+    {"lib": "flask", "file": "cli.py", "line": 1022, "call": "open", "verdict": "F", "pattern": "GUARD", "note": "v6 治理：startup 经 os.path.isfile(startup) 存在性护栏后才 open，护栏覆盖；原 v5 标 T（流真实），v6 起按护栏治理滤除，判定改 F-GUARD"},
     {"lib": "flask", "file": "config.py", "line": 209, "call": "exec", "verdict": "T", "pattern": "DESIGN", "note": "from_envvar 环境变量→from_pyfile→exec 配置文件，跨函数传播真实；加载开发者指定配置是框架设计"},
     {"lib": "flask", "file": "config.py", "line": 208, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "同上链路：root_path join 环境变量文件名后 open，流真实"},
     {"lib": "trio", "file": "_tests/check_type_completeness.py", "line": 222, "call": "open", "verdict": "F", "pattern": "CONST", "note": "errors_by_platform_file 由 Path(__file__).parent/常量名构成，非外部输入；.exists() 文本撞外部特征正则致误染"},
@@ -26,6 +35,7 @@
     {"lib": "werkzeug", "file": "debug/__init__.py", "line": 398, "call": "frame.eval", "verdict": "F", "pattern": "TYPE", "note": "frame.eval 是调试器帧求值方法而非内置 eval；目录后缀匹配过宽，且调试控制台有 PIN+host 信任护栏"},
     {"lib": "werkzeug", "file": "debug/__init__.py", "line": 431, "call": "send_file", "verdict": "F", "pattern": "TYPE", "note": "send_file 首参是 BytesIO 内存对象而非路径，download_name 仅建议文件名；路径遍历不适用"},
     {"lib": "werkzeug", "file": "test.py", "line": 1064, "call": "self.open", "verdict": "F", "pattern": "TYPE", "note": "测试客户端 self.open 发模拟请求，builder 是请求构造器非文件路径；方法名撞 open 目录"},
-    {"lib": "werkzeug", "file": "utils.py", "line": 490, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "send_file 的 path 参数→open，调用方可传请求派生路径，流真实；safe_join 校验是调用方责任（文档化），提示有价值"}
+    {"lib": "werkzeug", "file": "utils.py", "line": 490, "call": "open", "verdict": "T", "pattern": "DESIGN", "note": "send_file 的 path 参数→open，调用方可传请求派生路径，流真实；safe_join 校验是调用方责任（文档化），提示有价值"},
+    {"lib": "werkzeug", "file": "utils.py", "line": 326, "call": "redirect", "verdict": "T", "pattern": "DESIGN", "note": "v6 新发现：environ QUERY_STRING→new_path 拼接→redirect，开放重定向数据流真实；get_redirect_location 工具函数，目标 URL 由调用方控制属设计边界"}
   ]
 }

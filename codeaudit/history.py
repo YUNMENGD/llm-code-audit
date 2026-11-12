@@ -70,6 +70,7 @@ def list_history(limit: int = 50) -> list[dict]:
             continue
         rows.append({
             "id": d.get("id", f.stem),
+            "ts": d.get("ts", 0),
             "time_str": d.get("time_str", ""),
             "target": d.get("target", ""),
             "mode": d.get("mode", ""),

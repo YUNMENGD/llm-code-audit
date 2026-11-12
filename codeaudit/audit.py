@@ -137,7 +137,12 @@ def audit_path(target: str | Path, depth: str = "file",
         if do_cross or client.available():
             engine["llm_used"] = True
             if is_js:
-                units = [file_unit]      # JS/TS 试点：文件级语义审计
+                # JS/TS：function 粒度走轻量函数切分，切不出回退文件级
+                if depth == "function":
+                    from . import jsparser as JP
+                    units = JP.split_js_functions(f) or [file_unit]
+                else:
+                    units = [file_unit]
             elif depth == "function":
                 units = P.split_functions(file_unit) or [file_unit]
             elif depth == "project" and target.is_dir():

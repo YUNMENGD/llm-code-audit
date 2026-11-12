@@ -46,10 +46,11 @@ def default_workers(n_files: int) -> int:
 
 
 def scan_files_parallel(files: list[Path], workers: int | None = None,
-                        ) -> tuple[list, int]:
+                        on_progress=None) -> tuple[list, int]:
     """并行扫描，返回 (Issue 列表按稳定序, 跳过文件数)。
 
     workers=1 或文件数 <8 时直接串行（进程池开销不划算）。
+    on_progress(done, total)：每完成一个文件回调一次（按真实文件数推进进度）。
     """
     from . import jsrules as JR
     from .models import Issue
@@ -57,11 +58,18 @@ def scan_files_parallel(files: list[Path], workers: int | None = None,
     tasks = [(str(f), "js" if f.suffix in JR.JS_EXTS else "py") for f in files]
     w = workers if workers is not None else default_workers(len(tasks))
     results: list[tuple[str, list[dict] | None]] = []
-    if w <= 1 or len(tasks) < 8:
-        results = [_scan_one(t) for t in tasks]
+    total = len(tasks)
+    if w <= 1 or total < 8:
+        for i, t in enumerate(tasks, 1):
+            results.append(_scan_one(t))
+            if on_progress:
+                on_progress(i, total)
     else:
         with ProcessPoolExecutor(max_workers=w) as pool:
-            results = list(pool.map(_scan_one, tasks, chunksize=4))
+            for i, r in enumerate(pool.map(_scan_one, tasks, chunksize=4), 1):
+                results.append(r)
+                if on_progress:
+                    on_progress(i, total)
     issues: list[Issue] = []
     skipped = 0
     for path, rows in results:

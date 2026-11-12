@@ -21,6 +21,10 @@ reports/
 chroma/
 faiss_index/
 
+# 真实库源码（评测用，体积大不入库；复现按 bench-real/bench-taint clone 字段下载）
+realtest/
+realtest-holdout/
+
 # 打包产物（绿色版）
 build/
 dist/

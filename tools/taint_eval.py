@@ -109,12 +109,14 @@ def report() -> int:
     for pat, n in patterns.most_common():
         lines.append(f"- {pat}: {n} 条")
     gov = doc.get("meta", {}).get("v5_governance")
-    if gov:
-        # 头部口径行给治理后现状，历史基线在对照表里保留（不误导读者）
-        lines[4] = (f"- 口径：precision = T/(T+F)；**v5 治理后 {gov['after']['precision']}"
-                    f"（{gov['after']['T']}/{gov['after']['candidates']} 候选全 T）**；"
-                    f"治理前基线 {gov['before']['precision']}（T={T} / F={F} / ?={Q}，"
-                    "下表为完整标注基线）")
+    gov6 = doc.get("meta", {}).get("v6_governance")
+    # 头部口径行（索引 5）统一为治理后现状；历史基线在下方对照表保留
+    latest = gov6 or gov
+    if latest:
+        lines[5] = (f"- 口径：precision = T/(T+F)；**最新治理后 "
+                    f"{latest['after']['precision']}（{latest['after']['T']}/"
+                    f"{latest['after']['candidates']} 候选全 T）**；"
+                    f"下方分库/分 sink 明细为完整标注基线（含已治理滤除项，T={T}/F={F}/?={Q}）")
     if gov:
         lines += ["", "## v5 精度治理前后对照（同一标注基线）", "",
                   f"- 治理规则：{gov['rules']}", "",
@@ -125,9 +127,21 @@ def report() -> int:
             lines.append(f"| {label} | {g['candidates']} | {g['T']} | {g['F']} "
                          f"| {g['precision']} |")
         lines += ["", f"- 零丢失校验：{gov['zero_loss']}",
-                  f"- 诚实口径：{gov['caveat']}",
-                  "- 复现：治理后重跑 `--collect` 得 5 条候选，与标注中 5 条 T 的位置"
-                  "逐一吻合；被滤除候选的过滤计数见各库 stats（filtered_*）"]
+                  f"- 诚实口径：{gov['caveat']}"]
+    if gov6:
+        lines += ["", "## v6 精度治理前后对照（泛化性强化）", "",
+                  f"- 治理规则：{gov6['rules']}", "",
+                  "| 口径 | 候选数 | T | F | precision |",
+                  "| --- | --- | --- | --- | --- |"]
+        for label, key in (("v6 前", "before"), ("v6 后", "after")):
+            g = gov6[key]
+            lines.append(f"| {label} | {g['candidates']} | {g['T']} | {g['F']} "
+                         f"| {g['precision']} |")
+        lines += ["", f"- 零丢失校验：{gov6['zero_loss']}",
+                  f"- 盲测泛化：{gov6['holdout']}",
+                  f"- 诚实口径：{gov6['caveat']}",
+                  "- 盲测详情见 [taint-holdout-results.md](taint-holdout-results.md)；"
+                  "复现：`python tools/taint_eval.py --collect` 得 5 条候选与标注 5 条 T 逐一吻合"]
     lines += ["", "## 核验标注全文", "",
               "| 库 | 位置 | sink | 判定 | 依据 |", "| --- | --- | --- | --- | --- |"]
     for r in rows:

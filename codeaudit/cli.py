@@ -82,9 +82,27 @@ def main(argv: list[str] | None = None) -> int:
     df.add_argument("new", help="新报告 JSON 路径")
     df.add_argument("--drift", type=int, default=3, help="行号漂移容忍（默认3）")
     df.add_argument("-o", "--out", default=None, help="对比结果 Markdown 输出路径")
+    tr = sub.add_parser("trend", help="审计历史趋势：问题数/严重度随时间变化")
+    tr.add_argument("--target", default=None, help="只统计该目标（按路径尾段匹配）")
+    tr.add_argument("--svg", default=None, metavar="PATH", help="导出趋势 SVG 图")
 
     a = ap.parse_args(argv)
 
+    if a.cmd == "trend":
+        from . import trend as TD
+        agg = TD.aggregate(target=a.target)
+        s = agg["summary"]
+        print(f"审计 {s['runs']} 次 · 问题数 {s['first_total']} → {s['last_total']}"
+              f"（{'+' if s['delta'] >= 0 else ''}{s['delta']}）· 峰值 {s['max_total']}")
+        for p in agg["points"]:
+            print(f"  {p['time_str']}  总{p['total']:>3}  "
+                  f"严{p['critical']} 高{p['high']} 中{p['medium']} 低{p['low']}  "
+                  f"{Path(p['target']).name}")
+        if a.svg:
+            Path(a.svg).parent.mkdir(parents=True, exist_ok=True)
+            Path(a.svg).write_text(TD.render_trend_svg(agg), encoding="utf-8")
+            print(f"趋势图 → {a.svg}")
+        return 0
     if a.cmd == "mcp":
         from .mcpserver import serve
         return serve()

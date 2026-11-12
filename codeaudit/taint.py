@@ -28,11 +28,25 @@ from .paths import ROOT
 
 CATALOG_FILE = ROOT / "knowledge" / "taint" / "catalog.json"
 
-# 外部输入特征（表达式文本级）：web 请求/命令行/环境变量/标准输入
+# 外部输入特征（表达式文本级）：web 请求/命令行/环境变量/标准输入。
+# 属性类特征（.args/.data/.json…）必须挂在已知外部输入根名上，避免 self.data
+# 这类任意对象属性误染（盲测 jinja2 Markup(self.data) 暴露的过宽问题）。
+_EXT_ROOT = r"(?:request|req|flask|self\.request|ctx\.request|environ|os\.environ)"
 _EXTERNAL_RX = re.compile(
     r"\brequest\b|\bflask\b|\bargv\b|os\.environ|os\.getenv|\binput\s*\(|"
-    r"sys\.stdin|\.args\b|\.form\b|\.json\b|\.data\b|\.values\b|\.cookies\b|"
-    r"\bheaders\b|\.query_params\b|\.GET\b|\.POST\b")
+    r"sys\.stdin|" + _EXT_ROOT +
+    r"\.(?:args|form|json|data|values|cookies|headers|query_params|GET|POST)\b")
+
+# 完整标识符提取：外部特征按 token 判定，杜绝 eval_ctx 含 eval 之类子串误撞
+_IDENT_RX = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _has_external_feature(text: str) -> bool:
+    """按完整标识符/属性链判定外部输入特征，而非裸子串搜索。"""
+    if _EXTERNAL_RX.search(text):
+        return True
+    # 兜底：request/argv 等独立词（词边界），不匹配 eval_ctx 里的 eval
+    return bool(re.search(r"\b(?:request|argv|environ|getenv|stdin)\b", text))
 
 # 字符串字面量遮蔽：文件名 ".json" 等文案不得撞外部输入特征（CONST 误染治理）
 _STR_RX = re.compile(r"\"\"\".*?\"\"\"|'''.*?'''|\"[^\"\n]*\"|'[^'\n]*'", re.S)
@@ -165,6 +179,11 @@ class TaintTracker:
                         "arg_names": [self._expr_names(a) for a in node.args],
                         "arg_text": [ast.unparse(a)[:80] for a in node.args]})
                     self.stats_d["sinks"] += 1
+                # 护栏登记：isfile/exists/isabs 等校验作用于哪些变量（GUARD 治理）
+                if name.rsplit(".", 1)[-1] in ("isfile", "exists", "isabs",
+                                               "is_dir", "safe_join"):
+                    for a in node.args:
+                        rec.setdefault("guards", set()).update(self._expr_names(a))
                 callee = resolve(node.func, mod, klass, aliases)
                 if callee:
                     rec["calls"].append({
@@ -200,6 +219,17 @@ class TaintTracker:
                 self.stats_d["filtered_buffer"] = \
                     self.stats_d.get("filtered_buffer", 0) + 1
                 return False
+        # subprocess 命令注入仅在经 shell 时成立：shell=True 才算 sink；
+        # 参数数组形态（subprocess.run([sys.executable, ...])）不经 shell，安全
+        if last in ("run", "Popen", "call", "check_output", "check_call") \
+                and name.startswith("subprocess"):
+            shell_true = any(
+                kw.arg == "shell" and isinstance(kw.value, ast.Constant)
+                and kw.value.value is True for kw in node.keywords)
+            if not shell_true:
+                self.stats_d["filtered_noshell"] = \
+                    self.stats_d.get("filtered_noshell", 0) + 1
+                return False
         return True
 
     @staticmethod
@@ -225,7 +255,7 @@ class TaintTracker:
                     self.stats_d["filtered_const"] = \
                         self.stats_d.get("filtered_const", 0) + 1
                     continue
-                if a["is_source"] or _EXTERNAL_RX.search(masked) \
+                if a["is_source"] or _has_external_feature(masked) \
                         or "parse_args(" in masked:
                     rec["tainted"].add(a["var"])
                     if "parse_args(" in masked:
@@ -272,13 +302,24 @@ class TaintTracker:
                 for idx, names in enumerate(s["arg_names"]):
                     hit_vars = names & rec["tainted"]
                     text = s["arg_text"][idx] if idx < len(s["arg_text"]) else ""
-                    external = bool(_EXTERNAL_RX.search(_strip_strings(text)))
+                    external = _has_external_feature(_strip_strings(text))
                     if not hit_vars and not external:
                         continue
                     if hit_vars and hit_vars <= rec["cli_vars"] and not external \
                             and not keep_cli:
                         self.stats_d["filtered_cli"] = \
                             self.stats_d.get("filtered_cli", 0) + 1
+                        continue
+                    # 护栏覆盖：路径类 sink 的实参变量已被本函数 isfile/exists
+                    # 校验（如 send_from_directory 先 isfile 再 send_file）；
+                    # 同时看实参文本里的标识符，覆盖外部特征直达（hit_vars 空）形态
+                    guards = rec.get("guards", set())
+                    arg_idents = set(_IDENT_RX.findall(text))
+                    if s["call"].rsplit(".", 1)[-1] in ("open", "send_file") \
+                            and guards and (hit_vars <= guards
+                                            or (arg_idents & guards)):
+                        self.stats_d["filtered_guard"] = \
+                            self.stats_d.get("filtered_guard", 0) + 1
                         continue
                     origin = self._origin(fqn, rec, hit_vars)
                     self.paths.append({
@@ -294,7 +335,7 @@ class TaintTracker:
             if a["var"] in hit_vars:
                 if a["is_source"]:
                     return f"source 调用（{Path(rec['file']).name}:{a['line']}）"
-                if _EXTERNAL_RX.search(a["text"]):
+                if _has_external_feature(a["text"]):
                     return f"外部输入（{Path(rec['file']).name}:{a['line']}）"
         for idx, param in enumerate(rec["args"]):
             if param in hit_vars and self.param_taint.get((fqn, idx)):
