@@ -482,6 +482,35 @@ def rules_test(req: RuleTestReq) -> dict:
         raise HTTPException(400, str(e))
 
 
+# ---------- 脱敏分享 ----------
+
+class ShareReq(BaseModel):
+    hist_id: str = ""
+    job_id: str = ""
+    watermark: str = ""
+
+
+@app.post("/api/share")
+def share_report(req: ShareReq) -> dict:
+    """生成脱敏分享版 HTML：优先历史 ID，其次当前任务 ID。"""
+    rep = None
+    if req.hist_id:
+        try:
+            rep = HS.load_report(req.hist_id)
+        except FileNotFoundError:
+            raise HTTPException(404, "历史记录不存在")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    elif req.job_id:
+        job = _jobs.get(req.job_id)
+        if job is None or job["status"] != "done":
+            raise HTTPException(409, "任务不存在或未完成")
+        rep = job["report"]
+    else:
+        raise HTTPException(400, "需提供 hist_id 或 job_id")
+    return {"html": RP.render_share_html(rep, req.watermark)}
+
+
 # ---------- 审计对比 / 一键修复 ----------
 
 @app.get("/api/history-diff")

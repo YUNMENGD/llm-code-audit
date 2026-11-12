@@ -30,7 +30,11 @@ def main(argv: list[str] | None = None) -> int:
         s.add_argument("--changed-since", dest="changed", metavar="REV",
                        default=None,
                        help="增量审计：只审 git 中相对 REV（如 HEAD~3，默认 HEAD=工作区变更）"
-                            "新增/修改的 .py 文件；调用图等上下文仍按全库构建")
+                            "新增/修改的 .py/.js/.ts 文件；调用图等上下文仍按全库构建")
+        if name == "check":
+            s.add_argument("--workers", type=int, default=None, metavar="N",
+                           help="并行扫描进程数（默认自动：<64 文件串行，"
+                                "≥64 用 CPU-1；1=强制串行）")
         if name == "audit":
             s.add_argument("-d", "--depth", choices=["function", "file", "project"],
                            default="file", help="审计粒度")
@@ -41,6 +45,10 @@ def main(argv: list[str] | None = None) -> int:
                            help="关闭 few-shot 校准示例（A/B 对比用；也可用环境变量 PROMPT_EXAMPLES=0）")
             s.add_argument("--html", dest="html_out", default=None, metavar="PATH",
                            help="同时输出 HTML 报告（如 out/report.html）")
+            s.add_argument("--share", dest="share_out", default=None, metavar="PATH",
+                           help="同时输出脱敏分享版 HTML（路径只留文件名、凭据掩码）")
+            s.add_argument("--watermark", default="", metavar="TEXT",
+                           help="分享版水印文字（默认「脱敏分享版」）")
             s.add_argument("--cross-review", dest="cross", action="store_true",
                            default=None,
                            help="启用 D15 双模型交叉复核（需配置 LLM2_API_KEY；两模型并发调用）")
@@ -158,14 +166,21 @@ def main(argv: list[str] | None = None) -> int:
             files = [p for p in files if str(p.resolve()) in only]
             print(f"增量模式：{len(files)} 个变更文件（上下文外文件已跳过）")
         all_rules = RL.load_rules()
-        js_rules = JR.load_js_rules()
-        issues = []
-        for f in files:
-            src = f.read_text(encoding="utf-8", errors="replace")
-            if f.suffix in JR.JS_EXTS:
-                issues += JR.scan_js_source(src, js_rules, str(f))
-            else:
-                issues += RL.scan_source(src, all_rules, str(f))
+        from . import parallel as PL
+        workers = getattr(a, "workers", None)
+        if workers == 1 or (workers is None and PL.default_workers(len(files)) == 1):
+            js_rules = JR.load_js_rules()
+            issues = []
+            for f in files:
+                src = f.read_text(encoding="utf-8", errors="replace")
+                if f.suffix in JR.JS_EXTS:
+                    issues += JR.scan_js_source(src, js_rules, str(f))
+                else:
+                    issues += RL.scan_source(src, all_rules, str(f))
+        else:
+            issues, skipped = PL.scan_files_parallel(files, workers=workers)
+            if skipped:
+                print(f"跳过不可读文件 {skipped} 个")
         rep = AuditReport(target=a.target, issues=issues,
                           engine={"model": "static-only", "llm_used": False,
                                   "units": len(files), "rules_loaded": len(all_rules),
@@ -186,6 +201,12 @@ def main(argv: list[str] | None = None) -> int:
                      only_files=only)
     md, js, hp = write_report(rep, a.out, a.json_out, a.html_out)
     extra = f"、{hp}" if hp else ""
+    if a.share_out:
+        from .report import render_share_html
+        sp = Path(a.share_out)
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        sp.write_text(render_share_html(rep, a.watermark), encoding="utf-8")
+        extra += f"、分享版 {sp}"
     print(f"完成：{rep.stats['total']} 个问题 → {md}{extra}")
     cr = rep.stats.get("cross_review") or {}
     if cr.get("enabled"):

@@ -92,6 +92,20 @@ _TOOLS = [
             "properties": {"limit": {"type": "integer", "default": 10}},
         },
     },
+    {
+        "name": "diff_audits",
+        "description": "对比两次审计历史（按历史 ID），返回新增/消除/行号移动/存续问题清单。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "old_id": {"type": "string", "description": "旧审计历史 ID"},
+                "new_id": {"type": "string", "description": "新审计历史 ID"},
+                "drift": {"type": "integer", "default": 3,
+                          "description": "行号漂移容忍"},
+            },
+            "required": ["old_id", "new_id"],
+        },
+    },
 ]
 
 
@@ -117,17 +131,24 @@ def _tool_audit_code(args: dict) -> dict:
     if mode == "ai":
         rep = audit_path(target, depth=args.get("depth", "file"), only_files=only)
     else:
+        from . import jsrules as JR
         p = Path(target)
         files = [p] if p.is_file() else sorted(
-            f for f in p.rglob("*.py")
-            if not any(x in f.parts for x in (".git", "__pycache__", ".venv", "venv")))
+            f for f in p.rglob("*")
+            if f.is_file() and f.suffix in ({".py"} | JR.JS_EXTS)
+            and not any(x in f.parts for x in (".git", "__pycache__", ".venv",
+                                               "venv", "node_modules")))
         if only is not None:
             files = [f for f in files if str(f.resolve()) in only]
         rs = RL.load_rules()
+        js_rs = JR.load_js_rules()
         rep = AuditReport(target=target)
         for f in files:
-            rep.issues.extend(RL.scan_source(
-                f.read_text(encoding="utf-8", errors="replace"), rs, str(f)))
+            src = f.read_text(encoding="utf-8", errors="replace")
+            if f.suffix in JR.JS_EXTS:
+                rep.issues.extend(JR.scan_js_source(src, js_rs, str(f)))
+            else:
+                rep.issues.extend(RL.scan_source(src, rs, str(f)))
         rep.engine = {"model": "static-rules", "llm_used": False}
         rep.stats = {"total": len(rep.issues),
                      "by_severity": rep.count_by("severity"),
@@ -195,6 +216,19 @@ def _tool_history(args: dict) -> dict:
     return {"count": len(rows), "items": rows}
 
 
+def _tool_diff(args: dict) -> dict:
+    from . import history as HS
+    from .diff import diff_reports
+    a = HS.load_report(str(args.get("old_id", "")))
+    b = HS.load_report(str(args.get("new_id", "")))
+    d = diff_reports(a, b, drift=int(args.get("drift", 3)))
+    slim = lambda rows: [{"rule": i.get("rule_id"), "path": i.get("path"),
+                          "line": i.get("line_start"), "title": i.get("title")}
+                         for i in rows]
+    return {"summary": d["summary"], "added": slim(d["added"]),
+            "removed": slim(d["removed"]), "moved": d["moved"]}
+
+
 _HANDLERS = {
     "audit_code": _tool_audit_code,
     "list_rules": _tool_list_rules,
@@ -202,6 +236,7 @@ _HANDLERS = {
     "list_knowledge": _tool_list_knowledge,
     "mark_false_positive": _tool_mark_fp,
     "audit_history": _tool_history,
+    "diff_audits": _tool_diff,
 }
 
 

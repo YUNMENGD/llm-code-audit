@@ -653,6 +653,17 @@ from codeaudit import kbadmin as KA                    # noqa: E402
 
 _kb_bak = KA.CUSTOM_KB_FILE.read_bytes() if KA.CUSTOM_KB_FILE.exists() else None
 _rl_bak = KA.CUSTOM_RULES_FILE.read_bytes() if KA.CUSTOM_RULES_FILE.exists() else None
+# 清场：历史崩溃可能残留同 ID 测试条目，先删净保证「新建」语义可测
+for _rid in ("TEST-9001",):
+    try:
+        KA.delete_item(_rid)
+    except ValueError:
+        pass
+for _rid in ("R-TEST-9001",):
+    try:
+        KA.delete_rule(_rid)
+    except ValueError:
+        pass
 try:
     _it, _new = KA.save_item({"id": "TEST-9001", "title": "测试条目",
                               "severity": "high", "category": "security",
@@ -725,7 +736,7 @@ _init = MS.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": 
 check("initialize 回服务器信息", _init["result"]["serverInfo"]["name"] == "llm-code-audit")
 check("通知无响应", MS.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None)
 _tl = MS.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-check("六工具齐全", len(_tl["result"]["tools"]) == 6)
+check("七工具齐全", len(_tl["result"]["tools"]) == 7)
 _ac = MS.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                  "params": {"name": "audit_code",
                             "arguments": {"target": str(Path(__file__).resolve().parent.parent
@@ -865,5 +876,83 @@ check("未知资源报错", "error" in _bad_res)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import kb_review as KR                                 # noqa: E402
 check("评审门禁 schema 当前全过", KR.check_schema() == [])
+
+print("\n[32] parallel：并行与串行结果逐条一致")
+from codeaudit import parallel as PL                   # noqa: E402
+
+# 进程池残留清理：前面组别若留下异常状态不影响本组
+with tempfile.TemporaryDirectory() as _td:
+    _pp = Path(_td)
+    for _i in range(10):
+        (_pp / f"f{_i}.py").write_text(
+            f'import os\nos.system("ls " + x{_i})\neval(y)\n', encoding="utf-8")
+    (_pp / "g.js").write_text('const r = eval(z);\n', encoding="utf-8")
+    _fs = sorted(_pp.glob("*"))
+    _ser, _sk1 = PL.scan_files_parallel(_fs, workers=1)
+    # Windows spawn 会重新导入 __main__：独立脚本直接跑时顶层测试代码会在
+    # 子进程重放导致进程池崩溃，故仅在 pytest 导入态（__main__ 是 pytest）
+    # 做真实多进程验证；脚本态验证串行路径 + 任务分片逻辑。
+    import __main__ as _mm
+    _spawn_safe = "pytest" in getattr(_mm, "__file__", "")
+    if _spawn_safe:
+        _par, _sk2 = PL.scan_files_parallel(_fs, workers=2)
+    else:
+        _par, _sk2 = PL.scan_files_parallel(_fs, workers=1)
+    check("并行串行告警数一致", len(_ser) == len(_par) and len(_ser) == 21)
+    check("并行串行逐条对齐", [(i.path, i.rule_id, i.line_start) for i in _ser]
+          == [(i.path, i.rule_id, i.line_start) for i in _par])
+    check("JS 文件纳入并行", any(i.rule_id == "JS-SEC-001" for i in _par))
+    check("小目录默认串行", PL.default_workers(10) == 1)
+    check("大目录默认并行", PL.default_workers(200) >= 2)
+
+print("\n[33] share：脱敏分享版（路径/凭据掩码 + 水印）")
+_iss_s = Issue(rule_id="R-SEC-006", category=Category.SECURITY,
+               severity=Severity.HIGH, title="硬编码密钥",
+               path=r"C:\Users\someone\secret_proj\db.py", line_start=2,
+               evidence='API_KEY = "sk-live-abcdef1234567890"',
+               analysis="密钥入库", fix='改用环境变量\n```python\nkey = os.environ["API_KEY"]\n```')
+_rep_s = AuditReport(target=r"C:\Users\someone\secret_proj", issues=[_iss_s],
+                     engine={"model": "m", "llm_used": False},
+                     stats={"total": 1, "elapsed_sec": 0})
+_sh = RP.render_share_html(_rep_s, watermark="测试水印<>&")
+check("本机路径不泄露", r"C:\Users" not in _sh and "someone" not in _sh
+      and "secret_proj" + "\\" not in _sh and "secret_proj/" not in _sh)
+check("文件名与项目名保留可定位", "db.py" in _sh and "secret_proj" in _sh)
+check("sk- 密钥已掩码", "sk-live-abcdef1234567890" not in _sh and "已掩码" in _sh)
+check("水印注入且转义", "测试水印&lt;&gt;&amp;" in _sh)
+check("分享标记在位", "脱敏分享版" in _sh)
+check("原报告不被改动", _iss_s.path.startswith("C:") and "sk-live" in _iss_s.evidence)
+
+print("\n[34] MCP diff 工具 + JS 语义审计单元")
+import json as _json                                   # noqa: E402
+_d1 = MS.handle({"jsonrpc": "2.0", "id": 20, "method": "tools/list"})
+check("七工具齐全", len(_d1["result"]["tools"]) == 7
+      and any(t["name"] == "diff_audits" for t in _d1["result"]["tools"]))
+_h_bak2 = HS.HIST_DIR
+with tempfile.TemporaryDirectory() as _td:
+    HS.HIST_DIR = Path(_td) / "h"
+    try:
+        _ra = AuditReport(target="t", issues=[_mk_issue("R-X", "a.py", 5)])
+        _rb = AuditReport(target="t", issues=[_mk_issue("R-Y", "b.py", 9)])
+        _ha, _hb = HS.save(_ra), HS.save(_rb)
+        _dr = MS.handle({"jsonrpc": "2.0", "id": 21, "method": "tools/call",
+                         "params": {"name": "diff_audits",
+                                    "arguments": {"old_id": _ha, "new_id": _hb}}})
+        _dd = _json.loads(_dr["result"]["content"][0]["text"])
+        check("diff 工具新增/消除正确", _dd["summary"]["added"] == 1
+              and _dd["summary"]["removed"] == 1)
+    finally:
+        HS.HIST_DIR = _h_bak2
+from codeaudit.audit import _parse_js_file             # noqa: E402
+with tempfile.TemporaryDirectory() as _td:
+    _jf = Path(_td) / "x.ts"
+    _jf.write_text('import express from "express";\nfunction handler(req) {\n'
+                   '  return eval(req.query.code);\n}\n', encoding="utf-8")
+    _ju = _parse_js_file(_jf)
+    check("JS 单元语言标记", _ju.context.get("language") == "JavaScript/TypeScript")
+    check("JS 单元函数名提取", "handler" in _ju.context.get("functions", []))
+    check("JS 单元导入提取", "express" in _ju.context.get("imports", []))
+check("JS 审计模板存在", (Path(__file__).resolve().parent.parent / "prompts"
+                        / "js_file_audit.md").exists())
 
 print(f"\n全部通过：{PASS} 项 ✓")

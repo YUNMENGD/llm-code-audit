@@ -63,15 +63,37 @@
       schema/来源/正则/ID 冲突机器预审 + bench-real 零误杀红线回归
 - [x] 离线测试 203 → 234 项；pytest 30 项；v3 端到端冒烟 14 项全过
 
+## 已落地（v4 轮：实验数据与工程深化）
+
+- [x] **污点追踪真实库量化**（tools/taint_eval.py + bench-taint/annotations.json
+      + docs/taint-eval-results.md）：六库 12 条候选逐条人工核验，
+      precision 0.417（T5/F7），误报模式归因（类型不符/护栏覆盖/常量误染/
+      CLI 自有参数）；顺带修复嵌套函数重复统计口径
+- [x] **静态扫描并行化**（codeaudit/parallel.py + check --workers +
+      tools/perf_scan.py + docs/perf-scan-results.md）：进程池按文件分片，
+      结果与串行逐条一致；实测 trio ×2.04 / botocore ×1.27，小目录负优化
+      → 自动阈值 <64 文件串行；冻结态回退串行
+- [x] **脱敏分享版**（render_share_html + audit --share/--watermark +
+      /api/share + 前端分享按钮）：路径只留文件名、凭据掩码、斜向水印，
+      对外提交/投稿附件可用
+- [x] **JS/TS 语义层审计**（prompts/js_file_audit.md + audit 语言分流 +
+      gitdiff 扩展后缀 + docs/js-audit-results.md）：bench-js 真实模型调用
+      预埋缺陷 10/10、反例零误报、语义层独有发现 2 条
+- [x] **MCP 第七工具 diff_audits** + audit_code 静态分支纳入 JS/TS
+- [x] pytest.ini 收集配置（独立脚本式离线测试不再被 pytest 误收集）
+- [x] 离线测试 234 → 251 项；pytest 30 项；六库零误杀；v4 冒烟 12/12
+- [x] README 全面更新（实验矩阵/双语言/新命令/去实名）
+
 ## 待办（按价值排序，未承诺时间）
 
 1. **向量臂补数**：拿到有效 embeddings 端点后在设置页填 EMBEDDING_*，
    重跑 tools/rag_ablation.py 即得两臂对照表（框架已就绪）
-2. **污点追踪真实库量化**：在六库上统计候选路径数与人工核验精度，
-   形成论文实验节（当前已有单测与注入链路，缺真实库数据）
-3. **JS/TS 深化**：tree-sitter AST 级精度、语义层审计接入（当前仅静态规则层）
-4. **报告分享**：单文件 HTML 加水印/脱敏选项，便于对外提交
-5. **性能**：大目录静态扫描并行化（进程池），进度条按文件数精确推进
+2. **污点精度治理**：按已归因的误报模式收紧（方法名撞车豁免对齐 Python 层
+   NAME 治理、BytesIO/非路径参数类型过滤、常量路径不染色），目标 precision
+   提升后重跑核验（标注口径已固化，可对照）
+3. **JS/TS 深化**：tree-sitter AST 级精度、函数级切分、JS 知识库弹药扩充
+4. **绿色版 v4 重打包**：dist 当前为 v2 代码，需重跑 build_portable + selftest
+5. **进度条精确化**：并行扫描按完成文件数推进（当前按日志行解析）
 
 ## 红线（任何新功能不得触碰）
 

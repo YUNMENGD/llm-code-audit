@@ -163,6 +163,7 @@
         <button data-v="dl-html" title="下载交互报告">⬇ HTML</button>
         <button data-v="dl-md" title="下载 Markdown">⬇ MD</button>
         <button data-v="dl-json" title="下载结构化数据">⬇ JSON</button>
+        <button data-v="dl-share" title="脱敏分享版：路径只留文件名、凭据掩码、带水印">⬇ 分享版</button>
       </div>
       <iframe id="frame" style="display:none"></iframe>
       <div id="md"></div>
@@ -200,6 +201,7 @@
         <button class="btn ghost sm" id="hist-dl-html">⬇ HTML</button>
         <button class="btn ghost sm" id="hist-dl-md">⬇ MD</button>
         <button class="btn ghost sm" id="hist-dl-json">⬇ JSON</button>
+        <button class="btn ghost sm" id="hist-dl-share">⬇ 分享版</button>
         <button class="btn ghost sm" id="hist-close">收起</button>
       </div>
       <iframe id="hist-frame" style="width:100%;height:60vh;border:1px solid var(--line);border-radius:6px;background:#fff"></iframe>
@@ -265,7 +267,7 @@
       <button class="btn ghost sm" id="mcp-test">连接自检</button>
       <button class="btn sm" id="mcp-copy">复制配置</button>
     </div>
-    <p class="muted" style="margin-bottom:10px">把审计能力开放给 Claude Desktop、Cursor 等 MCP 客户端：复制下方片段，粘进客户端配置文件的 mcpServers 字段后重启客户端。暴露 6 个工具：audit_code / list_rules / search_knowledge / list_knowledge / mark_false_positive / audit_history。</p>
+    <p class="muted" style="margin-bottom:10px">把审计能力开放给 Claude Desktop、Cursor 等 MCP 客户端：复制下方片段，粘进客户端配置文件的 mcpServers 字段后重启客户端。暴露 7 个工具：audit_code（含 JS/TS）/ list_rules / search_knowledge / list_knowledge / mark_false_positive / audit_history / diff_audits；另提供知识库只读资源（resources）与审计话术模板（prompts）。</p>
     <pre class="code" id="mcp-config">加载中…</pre>
     <div id="mcp-result" class="muted" style="margin-top:12px"></div>
     <p class="muted" style="margin-top:14px">命令行手动启动：<code>python -m codeaudit mcp</code>（绿色版：<code>CodeAudit.exe --mcp</code>）。服务器只在本机标准输入输出上通信，不监听网络端口。</p>
@@ -503,6 +505,7 @@ $("#tabs").addEventListener("click", e => {
     if (v === "dl-html") download(`审计报告-${stamp()}.html`, lastResult.html, "text/html;charset=utf-8");
     if (v === "dl-md") download(`审计报告-${stamp()}.md`, lastResult.markdown, "text/markdown;charset=utf-8");
     if (v === "dl-json") download(`审计报告-${stamp()}.json`, lastResult.json, "application/json;charset=utf-8");
+    if (v === "dl-share") shareDownload({job_id: curJob || "", hist_id: lastResult.hist_id || ""});
   } else toast("还没有可导出的结果", "err");
 });
 
@@ -564,14 +567,25 @@ $("#diff-run").onclick = async () => {
 async function viewHistory(it) {
   try {
     const d = await api(`/api/history/${it.id}`);
-    histResult = d;
+    histResult = d; histCurId = it.id;
     $("#hist-title").textContent = `${it.time_str} · ${it.target}`;
     $("#hist-frame").srcdoc = d.html;
     $("#hist-view").style.display = "block";
     $("#hist-view").scrollIntoView({behavior:"smooth"});
   } catch (e) { toast(e.message, "err"); }
 }
-$("#hist-close").onclick = () => { $("#hist-view").style.display = "none"; histResult = null; };
+$("#hist-close").onclick = () => { $("#hist-view").style.display = "none"; histResult = null; histCurId = ""; };
+let histCurId = "";
+async function shareDownload(ref) {
+  const wm = prompt("分享版水印文字（可留空用默认）：", "内部评审 · 脱敏版");
+  if (wm === null) return;
+  try {
+    const d = await post("/api/share", {...ref, watermark: wm});
+    download(`审计报告-分享版-${stamp()}.html`, d.html, "text/html;charset=utf-8");
+    toast("分享版已下载：路径与凭据已掩码", "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#hist-dl-share").onclick = () => histCurId && shareDownload({hist_id: histCurId});
 $("#hist-dl-html").onclick = () => histResult && download(`历史报告-${stamp()}.html`, histResult.html, "text/html;charset=utf-8");
 $("#hist-dl-md").onclick = () => histResult && download(`历史报告-${stamp()}.md`, histResult.markdown, "text/markdown;charset=utf-8");
 $("#hist-dl-json").onclick = () => histResult && download(`历史报告-${stamp()}.json`, histResult.json, "application/json;charset=utf-8");

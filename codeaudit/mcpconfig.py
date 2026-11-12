@@ -64,7 +64,7 @@ def selftest(timeout: float = 60.0) -> dict:
     init = (by_id.get(1) or {}).get("result") or {}
     tools = ((by_id.get(2) or {}).get("result") or {}).get("tools") or []
     call = (by_id.get(3) or {}).get("result") or {}
-    ok = bool(init.get("serverInfo")) and len(tools) >= 6 and not call.get("isError")
+    ok = bool(init.get("serverInfo")) and len(tools) >= 7 and not call.get("isError")
     out = {"ok": ok, "server": init.get("serverInfo", {}),
            "tools": [t["name"] for t in tools],
            "call_ok": not call.get("isError", True)}
