@@ -99,14 +99,38 @@
 - [x] 绿色版 v5 重打包：frozen selftest PASS（规则18/知识67/静态+AI 双模式），
       exe --mcp 七工具+资源+模板握手 PASS；包内密钥与测试残留已清理
 
+## 已落地（v6 轮：泛化性验证与体验深化）
+
+- [x] **污点治理泛化性盲测**（tools/taint_holdout.py + bench-taint/holdout.json
+      + docs/taint-holdout-results.md）：三个从未参与治理设计的新仓库
+      （jinja2/itsdangerous/markupsafe）盲测，治理后零候选零误报；
+      盲测暴露的 Markup(self.data) 过宽匹配驱动 v6 三条新治理：
+      ⑤外部属性特征限定已知根名 ⑥完整标识符判定防子串误撞
+      ⑦subprocess 仅 shell=True 算 sink + isfile/exists 护栏覆盖过滤。
+      六库重测真流零丢失（5/5），precision 维持 1.0
+- [x] **JS/TS 函数级审计**（codeaudit/jsparser.py brace 状态机切分，零依赖）：
+      depth=function 时 JS 走函数级单元，切不出回退文件级；bench-js 扩样至
+      13 处预埋（原型链污染/不安全反序列化/开放重定向），真实模型 13/13 检出、
+      反例零误报、语义层独有发现 3 条
+- [x] **审计历史趋势看板**（codeaudit/trend.py + CLI trend + /api/history-trend
+      + 历史页原生 SVG 趋势图）：问题数/严重度随时间变化，治理见效一眼可见
+- [x] **并行扫描进度回调**（parallel.scan_files_parallel on_progress 按完成
+      文件数推进）；静态分支逐文件 [i/n] 日志驱动前端进度条
+- [x] **界面优化**（用户实测反馈）：知识库/规则编辑弹窗屏幕居中、左侧配置
+      面板去多余滚动条、左下角日志框缩小为固定高度
+- [x] 离线测试 259 → 274 项；pytest 30 项；六库零误杀；评审门禁 PASS；
+      v6 端到端冒烟全过（趋势/分享端点 + 界面修复验证）
+- [x] 修复真实 bug：jsparser 未匹配组 m.start() 返回 -1 被 or 短路致行号错乱、
+      趋势同秒存档排序不稳（补 ts 字段）
+
 ## 待办（按价值排序，未承诺时间）
 
 1. **向量臂补数**：拿到有效 embeddings 端点后在设置页填 EMBEDDING_*，
    重跑 tools/rag_ablation.py 即得两臂对照表（框架已就绪）
-2. **JS/TS 深化**：tree-sitter AST 级精度、函数级切分、JS 基准扩样
-3. **污点治理外推验证**：在六库之外的新仓库上盲测治理后 precision，
-   检验规则泛化性（当前 1.0 是小样本治理效果，不外推）
-4. **进度条精确化**：并行扫描按完成文件数推进（当前按日志行解析）
+2. **JS/TS 深化**：tree-sitter AST 级精度（当前 brace 状态机近似）、JS 基准再扩样
+3. **污点召回评测**：盲测三库外部输入面小，零候选不代表高召回；需更大规模
+   含真实漏洞的仓库标注，评测治理后召回率（当前只验证了 precision 与零误报）
+4. **绿色版 v6 重打包**：dist 当前为 v5 代码，需重跑 build_portable + selftest
 
 ## 红线（任何新功能不得触碰）
 

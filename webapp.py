@@ -339,6 +339,14 @@ def history_list(limit: int = 50) -> dict:
     return {"items": HS.list_history(limit)}
 
 
+@app.get("/api/history-trend")
+def history_trend(target: str = "", limit: int = 200) -> dict:
+    from codeaudit import trend as TD
+    agg = TD.aggregate(limit=limit, target=target or None)
+    agg["svg"] = TD.render_trend_svg(agg)
+    return agg
+
+
 @app.get("/api/history/{hist_id}")
 def history_report(hist_id: str) -> JSONResponse:
     try:

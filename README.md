@@ -64,16 +64,18 @@ python -m codeaudit real-eval     # 六库对照报表（免 API）
 | 实验 | 结论 | 文档 |
 | --- | --- | --- |
 | RAG 消融（关键词 vs 向量融合，119 条 T/F 真值，双查询口径） | 关键词臂 recall@5：文件窗 0.714 / 函数窗 0.592；向量臂待 embeddings 端点（⚠️暂未获取，接口已就绪） | [rag-ablation-results.md](docs/rag-ablation-results.md) |
-| 污点追踪真实库量化（六库候选路径逐条人工核验 + v5 精度治理） | 治理前 precision 0.417（T5/F7）→ 四条通用规则治理后 **1.0（5/5 全 T，真流零丢失）**；误报模式归因：类型不符/护栏覆盖/常量误染/CLI 自有参数 | [taint-eval-results.md](docs/taint-eval-results.md) |
-| JS/TS 语义审计（bench-js 真实模型调用） | 预埋缺陷 10/10 检出、反例零误报；语义层独有发现 2 条（正则覆盖不到的形态） | [js-audit-results.md](docs/js-audit-results.md) |
+| 污点追踪真实库量化（六库候选逐条人工核验 + v5/v6 七条通用治理 + 三新库盲测） | 治理前 precision 0.417（T5/F7）→ 治理后 **1.0（5/5 全 T，真流零丢失）**；盲测 jinja2/itsdangerous/markupsafe 三新库**零误报**，泛化成立 | [taint-eval-results.md](docs/taint-eval-results.md) · [taint-holdout-results.md](docs/taint-holdout-results.md) |
+| JS/TS 语义审计（bench-js 扩样 13 处预埋 · 函数级 · 真实模型调用） | 预埋缺陷 **13/13** 检出、反例零误报；语义层独有发现 3 条（不安全反序列化/原型链污染/通配导入）；函数级切分零依赖 | [js-audit-results.md](docs/js-audit-results.md) |
 | 静态扫描性能（六库串行 vs 进程池） | 结果逐条一致；trio（144 文件）×2.04、botocore ×1.27；小目录并行负优化 → 自动阈值 <64 文件走串行 | [perf-scan-results.md](docs/perf-scan-results.md) |
 | LLM 定级对照（三轮 34 条） | 知识注入后误报击杀率过半，三轮真缺陷误杀恒 0；定级层温度不可复现（翻转 14.7%）→ 分层边界依据 | [ai-adjudication-results.md](docs/ai-adjudication-results.md) |
 
 ```bash
 python tools/rag_ablation.py      # RAG 消融（关键词臂离线；配 EMBEDDING_* 后自动补向量臂）
 python tools/taint_eval.py --collect && python tools/taint_eval.py --report
+python tools/taint_holdout.py     # 污点治理泛化性盲测（需 realtest-holdout/ 三新库）
 python tools/perf_scan.py         # 性能实测（需 realtest/ 库源码）
 python tools/kb_review.py         # 知识库评审门禁：schema 预审 + 零误杀回归
+python -m codeaudit trend --svg out/trend.svg   # 审计历史趋势（问题数随时间变化）
 ```
 
 ## 数据飞轮
@@ -120,7 +122,7 @@ python desktop.py
 python -m codeaudit mcp        # 绿色版：CodeAudit.exe --mcp
 # 7 工具 + 知识库只读资源 + 审计话术模板；配置在桌面端「MCP」页一键复制
 
-# ④ 测试：259 项离线单测 + 六库回归红线
+# ④ 测试：274 项离线单测 + 六库回归红线
 python tests/test_offline.py
 python -m pytest
 ```
@@ -130,7 +132,7 @@ python -m pytest
 | 页签 | 能力 |
 | --- | --- |
 | 审计 | 静态/AI 双模式（Python+JS/TS）、三粒度、增量审计、双模型交叉复核、few-shot 开关、真实进度条、任务取消、Ctrl+Enter 快捷启动 |
-| 历史 | 完成任务自动存档（保留最近 50 次），回看交互报告、删除、导出 HTML/MD/JSON/**脱敏分享版**、勾选两份报告 **diff 对比**（新增/消除/移动/存续） |
+| 历史 | 完成任务自动存档（保留最近 50 次），回看交互报告、删除、导出 HTML/MD/JSON/**脱敏分享版**、勾选两份报告 **diff 对比**（新增/消除/移动/存续）、**趋势图**（问题数/严重度随时间变化） |
 | 知识库 | 条目搜索/新增/编辑/删除（自定义写 `knowledge/defects/custom.json`，内置只读保护评测口径）、一键重建向量索引 |
 | 规则库 | 硬规则查看 + 自定义正则规则（保存前强制编译校验 + 样例试跑预览），写入即进静态引擎 |
 | 设置 | 模型/密钥/端点/温度等在线编辑（密钥脱敏回显、留空不改、只落本地 `.env`）、一键连通性测试 |
@@ -153,8 +155,8 @@ python -m pytest
 
 ```
 llm-code-audit/
-├── codeaudit/        # 引擎包：parser/rules/jsrules/retriever/audit/taint/graph/
-│                     #   validate/report/diff/fixer/parallel/history/settings/mcp…
+├── codeaudit/        # 引擎包：parser/jsparser/rules/jsrules/retriever/audit/taint/
+│                     #   graph/validate/report/diff/fixer/parallel/history/trend/settings/mcp…
 ├── knowledge/
 │   ├── defects/      # 缺陷知识库（JSON，含 CWE 来源标注；custom.json 在线维护）
 │   ├── rules/        # Python 硬规则 + JS/TS 规则 + 防护特征（guards）
@@ -165,7 +167,7 @@ llm-code-audit/
 ├── web/              # 桌面端前端（六页签单页应用）
 ├── tools/            # 打包、消融/性能/污点实验、评审门禁、反馈聚合
 ├── desktop.py        # 桌面应用入口（pywebview 窗口 + 本地 FastAPI + --mcp）
-├── tests/            # 259 项离线单测 + bench-real 回归红线
+├── tests/            # 274 项离线单测 + bench-real 回归红线
 ├── examples/         # Python/JS 测试样例 + CI 门禁模板
 ├── docs/             # 需求/设计/决策/实验文档（实验矩阵见上）
 └── out/              # 审计报告与实验产物（不入库）
@@ -174,6 +176,7 @@ llm-code-audit/
 ## 项目进度
 
 当前路线图见 [docs/roadmap-v2.md](docs/roadmap-v2.md)（v2 设置中心/知识库/MCP/历史、
-v3 污点/消融/diff/JS 试点/一键修复/评审门禁、v4 污点量化/并行/分享版/JS 语义层均已落地）；
+v3 污点/消融/diff/JS 试点/一键修复/评审门禁、v4 污点量化/并行/分享版/JS 语义层、
+v5 污点精度治理/JS 弹药、v6 污点盲测泛化/JS 函数级/趋势看板/界面优化均已落地）；
 历史阶段归档见 [docs/20天开发计划.md](docs/20天开发计划.md)。
 协作规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
