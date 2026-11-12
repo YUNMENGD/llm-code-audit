@@ -37,7 +37,10 @@ def audit_path(target: str | Path, depth: str = "file",
                use_examples: bool | None = None,
                cross_review: bool | None = None,
                use_cache: bool | None = None,
-               only_files: set[str] | None = None) -> AuditReport:
+               only_files: set[str] | None = None,
+               preset: str | None = None,
+               min_severity: str | None = None,
+               entropy: bool | None = None) -> AuditReport:
     """审计一个文件或目录。depth: function(逐函数) | file(整体) | project(工程级)
 
     use_examples: few-shot 校准示例开关；None 时读环境变量 PROMPT_EXAMPLES。
@@ -55,8 +58,20 @@ def audit_path(target: str | Path, depth: str = "file",
         cross_review = os.getenv("AUDIT_CROSS_REVIEW", "0") == "1"
     do_cross = cross_review and reviewer.available() and reviewer.model != client.model
     clients = [client] + ([reviewer] if do_cross else [])
+    # 可选多模型投票：AUDIT_VOTE_MODELS=3 且配置了 LLM3_* 时纳入第三家
+    try:
+        _n_vote = int(os.getenv("AUDIT_VOTE_MODELS", "1"))
+    except ValueError:
+        _n_vote = 1
+    if _n_vote >= 3:
+        _c3 = LLMClient.for_slot(3)
+        if _c3.available() and _c3.model not in [c.model for c in clients]:
+            clients.append(_c3)
+            do_cross = True
     use_cache = C.enabled(use_cache)
-    static_rules = RL.load_rules()
+    from . import options as OP
+    static_rules = OP.filter_rules(RL.load_rules(), preset=preset)
+    _entropy_on = OP.load_options()["entropy"] if entropy is None else bool(entropy)
     knowledge = R.load_knowledge()
     use_examples = examples_enabled(use_examples)
     cache_stat = {"hit": 0, "miss": 0}
@@ -131,6 +146,9 @@ def audit_path(target: str | Path, depth: str = "file",
             issues += JR.scan_js_source(file_unit.source, js_rules, str(f))
         else:
             issues += RL.scan_source(file_unit.source, static_rules, str(f))
+        if _entropy_on:
+            from . import entropy as EN
+            issues += EN.scan_source(file_unit.source, str(f))
 
         # ② LLM 审计（未配置密钥则跳过，系统仍可输出静态结果）
         units: list[CodeUnit] = []
@@ -196,6 +214,8 @@ def audit_path(target: str | Path, depth: str = "file",
     filtered = before - len(issues)
     consistency_runs = int(os.getenv("AUDIT_CONSISTENCY_RUNS", "1"))
 
+    if min_severity and min_severity != "low":
+        issues = [i for i in issues if OP.sev_ok(i.severity.value, min_severity)]
     report = AuditReport(
         target=str(target),
         issues=issues,

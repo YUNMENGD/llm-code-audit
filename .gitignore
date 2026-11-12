@@ -25,6 +25,9 @@ faiss_index/
 realtest/
 realtest-holdout/
 
+# 内置标注工具的本地草稿（正式标注集经评审后再入库）
+bench-annot/
+
 # 打包产物（绿色版）
 build/
 dist/

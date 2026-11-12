@@ -59,6 +59,25 @@ class LLMClient:
             c.model = model2
         return c
 
+    @classmethod
+    def for_slot(cls, slot: int) -> "LLMClient":
+        """第 N 个模型槽位（可选多模型投票）：读 LLM{N}_API_KEY/BASE_URL/MODEL。
+
+        未配置该槽位时 available() 为 False，调用方据此跳过，
+        不影响既有单/双模型行为。
+        """
+        c = cls()
+        pre = "LLM%d_" % int(slot)
+        key = os.getenv(pre + "API_KEY", "").strip()
+        url = os.getenv(pre + "BASE_URL", "").strip()
+        mdl = os.getenv(pre + "MODEL", "").strip()
+        c.api_key = key
+        if url:
+            c.base_url = url.rstrip("/")
+        if mdl:
+            c.model = mdl
+        return c
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         """批量向量化（DashScope/OpenAI 兼容 embeddings 端点）。带重试退避。"""
         if not self.available():

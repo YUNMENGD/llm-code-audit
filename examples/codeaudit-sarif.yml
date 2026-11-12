@@ -1,0 +1,34 @@
+# SARIF → GitHub Code Scanning：审计结果直接进仓库「Security」页
+# 复制到 .github/workflows/codeaudit-sarif.yml 启用
+name: CodeAudit SARIF
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write        # 上传 SARIF 必需
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install codeaudit
+        run: |
+          git clone --depth 1 https://github.com/YUNMENGD/llm-code-audit.git /tmp/codeaudit
+          pip install -r /tmp/codeaudit/requirements.txt
+          pip install /tmp/codeaudit
+      - name: Static audit → SARIF
+        run: |
+          python -m codeaudit check . --preset security --sarif codeaudit.sarif || true
+      - name: Upload to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: codeaudit.sarif
+          category: codeaudit
