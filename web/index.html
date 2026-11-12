@@ -60,7 +60,7 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   #pbar { height:4px; background:var(--soft); border-radius:2px; margin-top:8px; overflow:hidden; display:none; }
   #pbar i { display:block; height:100%; width:0; background:var(--accent); border-radius:2px; transition:width .4s; }
-  #log { margin-top:8px; background:var(--code); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:11px/1.6 Consolas,monospace; color:var(--dim); height:96px; min-height:60px; overflow:auto; white-space:pre-wrap; flex-shrink:0; }
+  #log { margin-top:8px; background:var(--code); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:11px/1.6 Consolas,monospace; color:var(--dim); flex:1 1 160px; height:160px; min-height:120px; max-height:280px; overflow:auto; white-space:pre-wrap; }
   #out { position:relative; overflow:auto; }
   #empty { color:var(--dim); text-align:center; margin-top:26vh; }
   #frame { width:100%; height:calc(100vh - 230px); border:1px solid var(--line); border-radius:6px; background:#fff; }
