@@ -1,19 +1,26 @@
 # -*- coding: utf-8 -*-
-"""桌面应用 Web 后端（F 项）。
+"""桌面应用 Web 后端。
 
 设计：只包壳不改引擎——所有分析走 codeaudit 现有函数。
 - GET  /                前端页面
 - GET  /api/check       环境自检（密钥/知识库/规则数）
 - POST /api/audit       启动审计任务，立即返回 job_id（后台线程跑）
 - GET  /api/job/{id}    轮询任务状态与进度日志
-- GET  /api/result/{id} 取最终报告（HTML + 统计）
+- GET  /api/result/{id} 取最终报告（HTML + Markdown + JSON + 统计）
+- POST /api/cancel/{id} 取消排队/运行中任务
+- GET  /api/history…    审计历史：列表 / 回看 / 删除
+- GET/POST /api/settings、POST /api/settings/test   设置中心（密钥脱敏）
+- GET/POST/DELETE /api/kb…、POST /api/kb/reindex    知识库管理
+- GET/POST/DELETE /api/rules…、POST /api/rules/test 规则库管理
+- GET /api/mcp/config、POST /api/mcp/selftest       MCP 接入配置与自检
 
-安全：仅监听 127.0.0.1；任务表在内存；不执行被审计代码。
+安全：仅监听 127.0.0.1；任务表在内存且有上限；不执行被审计代码。
 """
 from __future__ import annotations
 
 import contextlib
 import io
+import os
 import threading
 import time
 import uuid
@@ -23,8 +30,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from codeaudit import history as HS
+from codeaudit import kbadmin as KA
+from codeaudit import mcpconfig as MC
 from codeaudit import report as RP
 from codeaudit import rules as RL
+from codeaudit import settings as ST
 from codeaudit.audit import audit_path
 from codeaudit.llm import LLMClient
 from codeaudit.paths import WEB_DIR
@@ -36,6 +47,8 @@ app = FastAPI(title="LLM Code Audit", docs_url=None, redoc_url=None)
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 _run_lock = threading.Lock()   # stdout 捕获是进程级的，任务必须串行跑
+_MAX_JOBS = 30                 # 任务表内存上限：先淘汰最旧的已结束任务
+_MAX_PROGRESS = 2000           # 单任务进度日志上限，防长任务撑爆内存
 
 
 class _LineBuf(io.TextIOBase):
@@ -50,7 +63,10 @@ class _LineBuf(io.TextIOBase):
         while "\n" in self._pending:
             line, self._pending = self._pending.split("\n", 1)
             if line.strip():
-                self._job["progress"].append(line.rstrip())
+                prog = self._job["progress"]
+                prog.append(line.rstrip())
+                if len(prog) > _MAX_PROGRESS:
+                    del prog[:len(prog) - _MAX_PROGRESS]
         return len(s)
 
     def flush(self) -> None:
@@ -63,6 +79,11 @@ class AuditReq(BaseModel):
     mode: str = "static"         # static | ai
     examples: bool = True
     incremental: bool = False    # 仅审 git 相对 HEAD 的变更 .py（含未跟踪）
+    cross_review: bool = False   # 双模型交叉复核（需配置第二模型）
+
+
+class CancelledError(RuntimeError):
+    """任务被用户主动取消。"""
 
 
 def _incremental_only(target: str) -> set[str]:
@@ -75,13 +96,15 @@ def _incremental_only(target: str) -> set[str]:
         raise RuntimeError(f"增量审计不可用：{e}") from e
 
 
-def _dispatch(req: AuditReq):
+def _dispatch(req: AuditReq, job: dict | None = None):
     """static：仅规则层（免费秒级）；ai：走完整 audit_path（其进度 print 被捕获）。"""
     only = None
     if req.incremental:
         only = _incremental_only(req.target)
         print(f"[incremental] git 变更 {len(only)} 个 .py 文件，其余跳过"
               f"（调用图等上下文不受影响）")
+        if not only:
+            print("[incremental] 相对 HEAD 没有 .py 变更，本次无需扫描")
     if req.mode == "static":
         from codeaudit.models import AuditReport
         target = Path(req.target)
@@ -92,11 +115,21 @@ def _dispatch(req: AuditReq):
             if not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv")))
         if only is not None:
             files = [p for p in files if str(p.resolve()) in only]
+        skipped = 0
         for i, f in enumerate(files, 1):
-            src = f.read_text(encoding="utf-8", errors="replace")
+            if job is not None and job.get("cancel"):
+                raise CancelledError("用户取消")
+            try:
+                src = f.read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                skipped += 1
+                print(f"[{i}/{len(files)}] 跳过不可读文件 {f.name}：{e}")
+                continue
             rep.issues.extend(RL.scan_source(src, rs, str(f)))
             print(f"[{i}/{len(files)}] 扫描 {f.name}")
         rep.engine = {"model": "static-rules", "llm_used": False, "depth": req.depth}
+        if skipped:
+            rep.engine["skipped"] = skipped
         if only is not None:
             rep.engine["incremental"] = {"changed": len(only), "scanned": len(files)}
         rep.stats = {"total": len(rep.issues),
@@ -107,6 +140,7 @@ def _dispatch(req: AuditReq):
         return rep
     return audit_path(req.target, depth=req.depth,
                       use_examples=req.examples or None,
+                      cross_review=req.cross_review or None,
                       only_files=only)
 
 
@@ -114,19 +148,39 @@ def _run_job(job_id: str, req: AuditReq) -> None:
     job = _jobs[job_id]
     try:
         with _run_lock, contextlib.redirect_stdout(_LineBuf(job)):
+            if job.get("cancel"):
+                raise CancelledError("用户取消")
             job["progress"].append(
                 f"任务开始 · 模式={'AI 深度审计（函数逐个调用模型，慢但深）' if req.mode == 'ai' else '静态规则检查'} · 粒度={req.depth}")
-            rep = _dispatch(req)
+            rep = _dispatch(req, job)
             job["progress"].append("生成报告中…")
         job["report"] = rep
         job["html"] = RP.render_interactive_html(rep)
         job["markdown"] = RP.render_markdown(rep)
+        job["json"] = rep.to_json()
         job["status"] = "done"
+        try:
+            job["hist_id"] = HS.save(rep, {"mode": req.mode, "depth": req.depth})
+        except Exception as e:                    # noqa: BLE001 存档失败不影响结果
+            job["progress"].append(f"历史存档失败（不影响本次结果）：{e}")
+    except CancelledError:
+        job["error"] = "任务已取消"
+        job["status"] = "cancelled"
     except Exception as e:                       # noqa: BLE001 前端需要看到失败原因
         job["error"] = f"{type(e).__name__}: {e}"
         job["status"] = "error"
     finally:
         job["finished_at"] = time.time()
+
+
+def _prune_jobs() -> None:
+    """任务表超上限时淘汰最旧的已结束任务（调用方需持 _lock）。"""
+    if len(_jobs) <= _MAX_JOBS:
+        return
+    finished = [k for k, v in _jobs.items() if v.get("finished_at")]
+    finished.sort(key=lambda k: _jobs[k]["finished_at"])
+    for k in finished[:len(_jobs) - _MAX_JOBS]:
+        _jobs.pop(k, None)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -137,11 +191,16 @@ def index() -> str:
 @app.get("/api/check")
 def check() -> dict:
     client = LLMClient()
+    reviewer = LLMClient.for_reviewer()
     return {
         "llm_ready": client.available(),
         "model": client.model,
         "rules": len(RL.load_rules()),
         "knowledge": len(load_knowledge()),
+        "reviewer_ready": reviewer.available(),
+        "reviewer_model": reviewer.model,
+        "vector": bool(os.getenv("EMBEDDING_API_KEY", "").strip()
+                       or client.available()),
     }
 
 
@@ -153,11 +212,16 @@ def start_audit(req: AuditReq) -> dict:
     if target.is_file() and target.suffix != ".py":
         raise HTTPException(400, "文件模式仅支持 .py（目录请传文件夹路径）")
     if req.mode == "ai" and not LLMClient().available():
-        raise HTTPException(400, "AI 模式需要 .env 配置 LLM_API_KEY；请先用「静态检查」模式")
+        raise HTTPException(400, "AI 模式需要先在「设置」配置模型密钥；请先用「静态检查」模式")
     job_id = uuid.uuid4().hex[:12]
     with _lock:
+        queued = sum(1 for j in _jobs.values() if j["status"] == "running")
         _jobs[job_id] = {"status": "running", "started_at": time.time(),
                          "progress": [], "report": None}
+        _prune_jobs()
+    if queued:
+        _jobs[job_id]["progress"].append(
+            f"排队中：前方还有 {queued} 个任务（进度日志按任务串行执行）")
     threading.Thread(target=_run_job, args=(job_id, req), daemon=True).start()
     return {"job_id": job_id}
 
@@ -173,27 +237,51 @@ def job_status(job_id: str) -> dict:
             "error": job.get("error")}
 
 
+@app.post("/api/cancel/{job_id}")
+def cancel_job(job_id: str) -> dict:
+    job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "任务不存在")
+    if job["status"] != "running":
+        return {"ok": False, "status": job["status"]}
+    job["cancel"] = True
+    return {"ok": True,
+            "note": "已请求取消：静态任务在文件间隙停止；AI 任务在当前模型调用返回后停止"}
+
+
 @app.get("/api/pick")
 def pick(kind: str = "file") -> dict:
     """弹系统文件/目录选择框（后端与前端同机）。kind: file | dir。
 
-    拖拽在 webview 里常拿不到真实路径，改用原生对话框最稳。tkinter 弹在
-    主线程外可能受限，异常时返回提示让前端回退到手输路径。
+    拖拽在 webview 里常拿不到真实路径，改用原生对话框最稳。对话框放独立
+    线程并设 120s 超时，避免某些环境下 tkinter 挂起拖死请求；异常/超时
+    返回提示让前端回退到手输路径。
     """
-    try:
+    holder: dict[str, str] = {}
+
+    def _ask() -> None:
         import tkinter
         from tkinter import filedialog
         root = tkinter.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        if kind == "dir":
-            path = filedialog.askdirectory(title="选择要审计的文件夹")
-        else:
-            path = filedialog.askopenfilename(
-                title="选择要审计的 Python 文件",
-                filetypes=[("Python 文件", "*.py"), ("所有文件", "*.*")])
-        root.destroy()
-        return {"path": path or ""}
+        try:
+            if kind == "dir":
+                holder["path"] = filedialog.askdirectory(title="选择要审计的文件夹")
+            else:
+                holder["path"] = filedialog.askopenfilename(
+                    title="选择要审计的 Python 文件",
+                    filetypes=[("Python 文件", "*.py"), ("所有文件", "*.*")])
+        finally:
+            root.destroy()
+
+    try:
+        t = threading.Thread(target=_ask, daemon=True)
+        t.start()
+        t.join(timeout=120)
+        if t.is_alive():
+            return {"path": "", "error": "选择框超时未响应，请手动输入路径"}
+        return {"path": holder.get("path") or ""}
     except Exception as e:                        # noqa: BLE001
         return {"path": "", "error": f"文件对话框不可用：{type(e).__name__}，请手动输入路径"}
 
@@ -205,7 +293,9 @@ def job_result(job_id: str) -> JSONResponse:
         raise HTTPException(409, "任务未完成")
     rep = job["report"]
     return JSONResponse({"html": job["html"], "markdown": job["markdown"],
-                         "stats": rep.stats, "engine": rep.engine})
+                         "json": job.get("json", rep.to_json()),
+                         "stats": rep.stats, "engine": rep.engine,
+                         "hist_id": job.get("hist_id", "")})
 
 
 class FeedbackReq(BaseModel):
@@ -232,3 +322,165 @@ def add_feedback(req: FeedbackReq) -> dict:
 def feedback_stats() -> dict:
     from codeaudit import feedback as FB
     return FB.stats()
+
+
+# ---------- 审计历史 ----------
+
+@app.get("/api/history")
+def history_list(limit: int = 50) -> dict:
+    return {"items": HS.list_history(limit)}
+
+
+@app.get("/api/history/{hist_id}")
+def history_report(hist_id: str) -> JSONResponse:
+    try:
+        rep = HS.load_report(hist_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "历史记录不存在")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"html": RP.render_interactive_html(rep),
+                         "markdown": RP.render_markdown(rep),
+                         "json": rep.to_json(),
+                         "stats": rep.stats, "engine": rep.engine})
+
+
+@app.delete("/api/history/{hist_id}")
+def history_delete(hist_id: str) -> dict:
+    try:
+        HS.delete(hist_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "历史记录不存在")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+# ---------- 设置中心 ----------
+
+@app.get("/api/settings")
+def settings_get() -> dict:
+    return {"fields": ST.snapshot()}
+
+
+@app.post("/api/settings")
+def settings_save(payload: dict) -> dict:
+    updates = payload.get("updates") if isinstance(payload, dict) else None
+    if not isinstance(updates, dict):
+        raise HTTPException(400, "请求体需为 {updates: {键: 值}}")
+    try:
+        changed = ST.save(updates)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "changed": changed}
+
+
+@app.post("/api/settings/test")
+def settings_test() -> dict:
+    return ST.test_connection()
+
+
+# ---------- 知识库管理 ----------
+
+@app.get("/api/kb")
+def kb_list() -> dict:
+    return {"items": KA.list_items()}
+
+
+class KBItemReq(BaseModel):
+    id: str
+    title: str
+    category: str = "security"
+    severity: str = "medium"
+    pattern: str = ""
+    impact: str = ""
+    fix: str = ""
+    source: str = ""
+    tags: list[str] = []
+    triggers: list[str] = []
+
+
+@app.post("/api/kb")
+def kb_save(req: KBItemReq) -> dict:
+    try:
+        item, created = KA.save_item(req.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "created": created, "id": item["id"]}
+
+
+@app.delete("/api/kb/{item_id}")
+def kb_delete(item_id: str) -> dict:
+    try:
+        KA.delete_item(item_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/kb/reindex")
+def kb_reindex() -> dict:
+    return KA.reindex()
+
+
+# ---------- 规则库管理 ----------
+
+@app.get("/api/rules")
+def rules_list() -> dict:
+    return {"rules": KA.list_rules()}
+
+
+class RuleReq(BaseModel):
+    id: str
+    title: str
+    pattern: str
+    category: str = "security"
+    severity: str = "medium"
+    source: str = ""
+    why: str = ""
+    impact: str = ""
+    suggestion: str = ""
+    exclude: list[str] = []
+
+
+@app.post("/api/rules")
+def rules_save(req: RuleReq) -> dict:
+    try:
+        rule, created = KA.save_rule(req.model_dump())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "created": created, "id": rule["id"]}
+
+
+@app.delete("/api/rules/{rule_id}")
+def rules_delete(rule_id: str) -> dict:
+    try:
+        KA.delete_rule(rule_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+class RuleTestReq(BaseModel):
+    pattern: str
+    sample: str = ""
+
+
+@app.post("/api/rules/test")
+def rules_test(req: RuleTestReq) -> dict:
+    try:
+        return {"ok": True, "hits": KA.test_pattern(req.pattern, req.sample)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------- MCP 接入 ----------
+
+@app.get("/api/mcp/config")
+def mcp_config() -> dict:
+    return MC.client_config()
+
+
+@app.post("/api/mcp/selftest")
+def mcp_selftest() -> dict:
+    return MC.selftest()

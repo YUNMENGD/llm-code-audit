@@ -34,6 +34,18 @@ def check(name: str, cond: bool):
     PASS += 1
 
 
+import json  # noqa: E402
+
+
+def _raises(fn) -> bool:
+    """断言辅助：fn() 抛 ValueError 才算通过（用于校验类测试）。"""
+    try:
+        fn()
+        return False
+    except ValueError:
+        return True
+
+
 print("[1] parser：AST 切分")
 fu = P.parse_file(Path("examples/vulnerable_app.py"))
 check("文件级单元行号正确", fu.line_end == len(SAMPLE.splitlines()))
@@ -612,5 +624,128 @@ finally:
         FB.QUEUE.write_bytes(_saved)
     elif FB.QUEUE.exists():
         FB.QUEUE.unlink()
+
+print("\n[23] settings：脱敏快照 + 增量保存（临时 .env，不碰真实配置）")
+import tempfile                                        # noqa: E402
+from codeaudit import settings as ST                   # noqa: E402
+
+with tempfile.TemporaryDirectory() as _td:
+    _envf = Path(_td) / ".env"
+    _envf.write_text("LLM_API_KEY=sk-tes…2345\nLLM_MODEL=old-model\n",
+                     encoding="utf-8")
+    _ch = ST.save({"LLM_MODEL": "new-model"}, env_file=_envf, apply=False)
+    check("普通项更新", _ch == ["LLM_MODEL"] and "new-model" in _envf.read_text(encoding="utf-8"))
+    _ch2 = ST.save({"LLM_API_KEY": ""}, env_file=_envf, apply=False)
+    check("密钥留空=保持不变", _ch2 == [] and "sk-tes…2345" in _envf.read_text(encoding="utf-8"))
+    _ch3 = ST.save({"LLM_API_KEY": "sk-tes…2345"}, env_file=_envf, apply=False)
+    check("密钥回传掩码=保持不变", _ch3 == [])
+    _ch4 = ST.save({"LLM_API_KEY": "sk-bra…6789"}, env_file=_envf, apply=False)
+    check("密钥真更新", _ch4 == ["LLM_API_KEY"])
+    check("未知键拒绝", _raises(lambda: ST.save({"NO_SUCH_KEY": "1"}, env_file=_envf, apply=False)))
+    check("温度越界拒绝", _raises(lambda: ST.save({"AUDIT_TEMPERATURE": "9"}, env_file=_envf, apply=False)))
+    check("端点协议校验", _raises(lambda: ST.save({"LLM_BASE_URL": "ftp://x"}, env_file=_envf, apply=False)))
+    check("掩码不泄中段", "abcdefgh" not in ST.mask("sk-tes…2345"))
+    check("快照不回明文密钥", all("sk-tes…2345" not in str(v.get("value", ""))
+                              for v in ST.snapshot().values() if v["secret"]))
+
+print("\n[24] kbadmin：自定义条目/规则闭环（内置只读保护）")
+from codeaudit import kbadmin as KA                    # noqa: E402
+
+_kb_bak = KA.CUSTOM_KB_FILE.read_bytes() if KA.CUSTOM_KB_FILE.exists() else None
+_rl_bak = KA.CUSTOM_RULES_FILE.read_bytes() if KA.CUSTOM_RULES_FILE.exists() else None
+try:
+    _it, _new = KA.save_item({"id": "TEST-9001", "title": "测试条目",
+                              "severity": "high", "category": "security",
+                              "triggers": ["testtrigger"], "pattern": "测试模式"})
+    check("自定义条目新建", _new and any(x["id"] == "TEST-9001" and not x["_builtin"]
+                                     for x in KA.list_items()))
+    check("自定义条目即时进检索池", any(x["id"] == "TEST-9001" for x in RT.load_knowledge()))
+    _, _new2 = KA.save_item({"id": "TEST-9001", "title": "改标题"})
+    check("同 ID 更新非新建", not _new2)
+    check("内置条目禁止覆盖", _raises(lambda: KA.save_item({"id": "CWE-89", "title": "x"})))
+    check("内置条目禁止删除", _raises(lambda: KA.delete_item("CWE-89")))
+    check("坏严重度拒绝", _raises(lambda: KA.save_item({"id": "TEST-9002", "title": "x", "severity": "urgent"})))
+    _rl, _rn = KA.save_rule({"id": "R-TEST-9001", "title": "测试规则",
+                             "pattern": r"test_marker\(", "severity": "low"})
+    check("自定义规则新建并进引擎", _rn and any(r["id"] == "R-TEST-9001" for r in RL.load_rules()))
+    _hits = RL.scan_source("x = test_marker(1)\n", RL.load_rules(), "t.py")
+    check("自定义规则真实命中", any(i.rule_id == "R-TEST-9001" for i in _hits))
+    check("坏正则拒绝", _raises(lambda: KA.save_rule({"id": "R-TEST-9002", "title": "x", "pattern": "([bad"})))
+    check("内置规则禁止覆盖", _raises(lambda: KA.save_rule({"id": "R-SEC-001", "title": "x", "pattern": "x"})))
+    _ph = KA.test_pattern(r"test_marker\(", "a\ntest_marker(2)\nb")
+    check("试跑预览命中行", len(_ph) == 1 and _ph[0]["line"] == 2)
+    KA.delete_item("TEST-9001")
+    KA.delete_rule("R-TEST-9001")
+    check("删除后不再加载", not any(x["id"] == "TEST-9001" for x in RT.load_knowledge())
+          and not any(r["id"] == "R-TEST-9001" for r in RL.load_rules()))
+finally:
+    if _kb_bak is not None:
+        KA.CUSTOM_KB_FILE.write_bytes(_kb_bak)
+    elif KA.CUSTOM_KB_FILE.exists():
+        KA.CUSTOM_KB_FILE.unlink()
+    if _rl_bak is not None:
+        KA.CUSTOM_RULES_FILE.write_bytes(_rl_bak)
+    elif KA.CUSTOM_RULES_FILE.exists():
+        KA.CUSTOM_RULES_FILE.unlink()
+
+print("\n[25] history：存档→列表→还原→删除")
+from codeaudit import history as HS                    # noqa: E402
+
+_h_bak = HS.HIST_DIR
+with tempfile.TemporaryDirectory() as _td:
+    HS.HIST_DIR = Path(_td) / "history"
+    try:
+        _iss2 = Issue(rule_id="R-H", category=Category.LOGIC, severity=Severity.HIGH,
+                      title="历史测试", path="h.py", line_start=2, evidence="e",
+                      analysis="a", fix="f", confidence=0.9, detector="static",
+                      verified=True, votes=2, models=["m1", "m2"])
+        _rep2 = AuditReport(target="h.py", issues=[_iss2],
+                            engine={"model": "static-rules", "llm_used": False},
+                            stats={"total": 1, "by_severity": {"high": 1}})
+        _hid = HS.save(_rep2, {"mode": "static", "depth": "file"})
+        check("存档返回列表可见", len(HS.list_history()) == 1
+              and HS.list_history()[0]["id"] == _hid)
+        _back = HS.load_report(_hid)
+        check("还原问题字段完整", len(_back.issues) == 1
+              and _back.issues[0].rule_id == "R-H"
+              and _back.issues[0].models == ["m1", "m2"]
+              and _back.issues[0].votes == 2 and _back.issues[0].verified)
+        check("还原可渲染交互报告", "const D =" in RP.render_interactive_html(_back))
+        HS.delete(_hid)
+        check("删除后列表为空", HS.list_history() == [])
+        check("非法 ID 拒绝", _raises(lambda: HS.load_report("../../etc/passwd")))
+    finally:
+        HS.HIST_DIR = _h_bak
+
+print("\n[26] MCP：协议握手 + 工具调用（进程内，零网络）")
+from codeaudit import mcpserver as MS                  # noqa: E402
+from codeaudit import mcpconfig as MC                  # noqa: E402
+
+_init = MS.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+check("initialize 回服务器信息", _init["result"]["serverInfo"]["name"] == "llm-code-audit")
+check("通知无响应", MS.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None)
+_tl = MS.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+check("六工具齐全", len(_tl["result"]["tools"]) == 6)
+_ac = MS.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                 "params": {"name": "audit_code",
+                            "arguments": {"target": str(Path(__file__).resolve().parent.parent
+                                                        / "examples" / "vulnerable_app.py"),
+                                          "fail_on": "high"}}})
+_acd = json.loads(_ac["result"]["content"][0]["text"])
+check("audit_code 真实命中", not _ac["result"]["isError"] and _acd["total"] >= 1)
+check("门禁判定 failed", _acd["gate"] == "failed")
+_sk = MS.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                 "params": {"name": "search_knowledge",
+                            "arguments": {"query": "cur.execute f-string SQL"}}})
+check("search_knowledge 命中 CWE-89",
+      any(i["id"] == "CWE-89" for i in json.loads(_sk["result"]["content"][0]["text"])["items"]))
+_bad = MS.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                  "params": {"name": "audit_code", "arguments": {"target": "Z:/no/such/path.py"}}})
+check("坏路径按 isError 返回", _bad["result"]["isError"])
+_unk = MS.handle({"jsonrpc": "2.0", "id": 6, "method": "no/such"})
+check("未知方法 -32601", _unk["error"]["code"] == -32601)
+_cfg = MC.client_config()
+check("客户端配置含启动命令", "llm-code-audit" in _cfg["config"]["mcpServers"]
+      and _cfg["config"]["mcpServers"]["llm-code-audit"]["command"])
 
 print(f"\n全部通过：{PASS} 项 ✓")

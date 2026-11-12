@@ -133,6 +133,25 @@ def _selftest(port: int) -> int:
 
 def main() -> None:
     # 打包成窗口程序（无控制台）后 sys.stdout 可能为 None，兜底防 print 报错
+    if "--mcp" in sys.argv:
+        # MCP stdio 模式：不起 Web 服务，stdout 只走 JSON-RPC 协议。
+        # 窗口版 exe 的 sys.stdout 为 None，但被客户端以管道拉起时 OS 句柄
+        # 有效——从 fd 重建流；句柄也无效（双击带参）则退空设备直接退出。
+        if getattr(sys, "frozen", False) and sys.stdout is None:
+            import io
+            try:
+                sys.stdin = io.TextIOWrapper(os.fdopen(os.dup(0), "rb"),
+                                             encoding="utf-8")
+                sys.stdout = io.TextIOWrapper(os.fdopen(os.dup(1), "wb"),
+                                              encoding="utf-8", write_through=True)
+                sys.stderr = io.TextIOWrapper(os.fdopen(os.dup(2), "wb"),
+                                              encoding="utf-8", write_through=True)
+            except OSError:
+                print("MCP 模式需要标准输入输出管道（由 MCP 客户端拉起）")
+                raise SystemExit(2)
+        from codeaudit.mcpserver import serve
+        raise SystemExit(serve())
+
     if getattr(sys, "frozen", False) and sys.stdout is None:
         sys.stdout = sys.stderr = open(os.devnull, "w")
 

@@ -3,97 +3,351 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>大模型代码审计系统</title>
+<title>明查秋毫 · 大模型代码审计系统</title>
 <style>
-  :root { --bg:#f5f8fd; --card:#fff; --line:#dce8f7; --txt:#2b3a52; --dim:#8496b0; --accent:#4a90e2; --ok:#2fbf8f; --err:#e05c5c; }
+  :root {
+    --bg:#f2f6fc; --card:#fff; --line:#d9e5f5; --txt:#26364e; --dim:#7f92ad;
+    --accent:#3d7fd9; --accent2:#6aa5ec; --ok:#22a87b; --err:#d95757; --warn:#c98a2d;
+    --soft:#eaf2fc; --code:#f7fafd; --shadow:0 1px 3px rgba(40,70,120,.07);
+  }
+  body.dark {
+    --bg:#0f1622; --card:#18222f; --line:#27364a; --txt:#d9e4f2; --dim:#7e91aa;
+    --accent:#5b96e8; --accent2:#7fb0f0; --ok:#3cc796; --err:#e57373; --warn:#e0a94f;
+    --soft:#1e2c3e; --code:#131c29; --shadow:0 1px 4px rgba(0,0,0,.35);
+  }
   * { box-sizing:border-box; margin:0; }
-  body { background:var(--bg); color:var(--txt); font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif; }
-  header { padding:12px 20px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
-  header h1 { font-size:15px; font-weight:600; }
-  header .env { margin-left:auto; font-size:12px; color:var(--dim); display:flex; gap:14px; }
+  body { background:var(--bg); color:var(--txt); font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif; transition:background .2s,color .2s; }
+  button { font-family:inherit; }
+  header { padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { font-size:15px; font-weight:600; white-space:nowrap; }
+  header h1 small { color:var(--dim); font-weight:400; font-size:12px; margin-left:6px; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav button { padding:6px 14px; background:transparent; border:1px solid transparent; border-radius:16px; color:var(--dim); cursor:pointer; font-size:13px; }
+  nav button:hover { color:var(--accent); }
+  nav button.sel { border-color:var(--accent); color:var(--accent); background:var(--soft); }
+  .env { margin-left:auto; font-size:12px; color:var(--dim); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
   .dot.on { background:var(--ok); } .dot.off { background:var(--dim); }
-  main { display:grid; grid-template-columns:340px 1fr; gap:14px; padding:14px 20px; height:calc(100vh - 48px); }
-  .panel { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; overflow:auto; }
-  .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:8px; }
+  #theme-btn { padding:4px 10px; background:var(--soft); border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
+  main { padding:14px 18px; }
+  .page { display:none; } .page.on { display:block; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; box-shadow:var(--shadow); overflow:auto; }
+  .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:10px; }
+  .grid2 { display:grid; grid-template-columns:340px 1fr; gap:14px; height:calc(100vh - 96px); }
   label { display:block; margin:10px 0 4px; font-size:12px; color:var(--dim); }
-  label.ckrow { display:flex; align-items:center; gap:6px; margin-top:12px; cursor:pointer; }
+  label.ckrow { display:flex; align-items:center; gap:6px; margin-top:10px; cursor:pointer; font-size:12px; }
   label.ckrow input { accent-color:var(--accent); cursor:pointer; }
-  input[type=text] { width:100%; padding:8px 10px; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--txt); font-size:13px; }
-  .pickrow { display:flex; gap:6px; margin-top:6px; }
-  .pickrow button { flex:1; padding:7px 0; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
-  .pickrow button:hover { border-color:var(--accent); color:var(--accent); }
-  .segs { display:flex; gap:6px; margin-top:6px; }
-  .segs button { flex:1; padding:7px 0; background:#fbfdff; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; }
-  .segs button.sel { border-color:var(--accent); color:var(--accent); background:#eef5fd; }
-  #run { width:100%; margin-top:14px; padding:10px; background:var(--accent); color:#fff; border:0; border-radius:6px; font-size:14px; cursor:pointer; }
-  #run:disabled { opacity:.5; cursor:default; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width:100%; padding:8px 10px; background:var(--code); border:1px solid var(--line);
+    border-radius:6px; color:var(--txt); font-size:13px; font-family:inherit; }
+  textarea { font:12px/1.6 Consolas,monospace; resize:vertical; min-height:64px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); }
+  .pickrow, .segs, .btnrow { display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; }
+  .pickrow button, .segs button { flex:1; padding:7px 4px; background:var(--code); border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; font-size:12px; min-width:70px; }
+  .pickrow button:hover, .segs button:hover { border-color:var(--accent); color:var(--accent); }
+  .segs button.sel { border-color:var(--accent); color:var(--accent); background:var(--soft); }
+  .btn { padding:8px 16px; background:var(--accent); color:#fff; border:0; border-radius:6px; font-size:13px; cursor:pointer; }
+  .btn:hover { background:var(--accent2); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .btn.ghost { background:var(--code); color:var(--dim); border:1px solid var(--line); }
+  .btn.ghost:hover { color:var(--accent); border-color:var(--accent); background:var(--soft); }
+  .btn.danger { background:transparent; color:var(--err); border:1px solid var(--err); }
+  .btn.sm { padding:4px 10px; font-size:12px; }
+  #run { width:100%; margin-top:14px; padding:10px; font-size:14px; }
   #status { margin-top:8px; font-size:12px; color:var(--dim); min-height:18px; }
   #status .spin { display:inline-block; animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  #log { margin-top:8px; background:#fafcff; border:1px solid var(--line); border-radius:6px; padding:10px; font:11px/1.7 Consolas,monospace; color:#5a7396; height:calc(100% - 360px); min-height:120px; overflow:auto; white-space:pre-wrap; }
+  #pbar { height:4px; background:var(--soft); border-radius:2px; margin-top:8px; overflow:hidden; display:none; }
+  #pbar i { display:block; height:100%; width:0; background:var(--accent); border-radius:2px; transition:width .4s; }
+  #log { margin-top:8px; background:var(--code); border:1px solid var(--line); border-radius:6px; padding:10px; font:11px/1.7 Consolas,monospace; color:var(--dim); height:calc(100% - 430px); min-height:110px; overflow:auto; white-space:pre-wrap; }
   #out { position:relative; }
-  #empty { color:var(--dim); text-align:center; margin-top:30vh; }
-  #frame { width:100%; height:calc(100vh - 210px); border:1px solid var(--line); border-radius:6px; background:#fff; }
+  #empty { color:var(--dim); text-align:center; margin-top:26vh; }
+  #frame { width:100%; height:calc(100vh - 230px); border:1px solid var(--line); border-radius:6px; background:#fff; }
   .tabs { display:flex; gap:8px; margin-bottom:8px; }
-  .tabs button { padding:5px 14px; background:#fff; border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
+  .tabs button { padding:5px 14px; background:var(--card); border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
   .tabs button.sel { border-color:var(--accent); color:var(--accent); }
   #stats { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
-  .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:#eef5fd; border:1px solid var(--line); }
+  .chip { padding:4px 12px; border-radius:14px; font-size:12px; background:var(--soft); border:1px solid var(--line); }
   .chip b { color:var(--txt); }
-  #errbox { display:none; background:#fdf0f0; border:1px solid #f2c8c8; color:#b04a4a; padding:10px 12px; border-radius:6px; margin-bottom:10px; font-size:13px; }
-  #md { display:none; height:calc(100vh - 210px); background:#fbfdff; border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; overflow:auto; }
+  #errbox { display:none; background:rgba(217,87,87,.08); border:1px solid var(--err); color:var(--err); padding:10px 12px; border-radius:6px; margin-bottom:10px; font-size:13px; }
+  #md { display:none; height:calc(100vh - 230px); background:var(--code); border:1px solid var(--line); padding:14px; border-radius:6px; font:12px/1.7 Consolas,monospace; white-space:pre-wrap; overflow:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-size:12px; font-weight:600; white-space:nowrap; }
+  tr:hover td { background:var(--soft); }
+  .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; border:1px solid var(--line); background:var(--soft); color:var(--dim); white-space:nowrap; }
+  .tag.critical { color:#e05c5c; border-color:#e05c5c; } .tag.high { color:#d98a2b; border-color:#d98a2b; }
+  .tag.medium { color:#c9b02d; border-color:#c9b02d; } .tag.low { color:var(--dim); }
+  .tag.ok { color:var(--ok); border-color:var(--ok); }
+  .toolbar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
+  .toolbar input[type=text] { width:240px; }
+  .muted { color:var(--dim); font-size:12px; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 18px; max-width:980px; }
+  .form-grid .full { grid-column:1 / -1; }
+  .card-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:10px; }
+  .kcard { border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--code); }
+  .kcard h3 { font-size:13px; margin-bottom:4px; }
+  .kcard p { font-size:12px; color:var(--dim); margin:4px 0; max-height:60px; overflow:hidden; }
+  .kcard .btnrow { margin-top:8px; }
+  dialog { border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--txt); padding:20px; width:min(680px,92vw); max-height:86vh; overflow:auto; }
+  dialog::backdrop { background:rgba(10,20,35,.45); }
+  dialog h3 { margin-bottom:10px; font-size:15px; }
+  pre.code { background:var(--code); border:1px solid var(--line); border-radius:6px; padding:12px; font:12px/1.6 Consolas,monospace; white-space:pre-wrap; word-break:break-all; }
+  #toast { position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:8px; z-index:99; }
+  #toast div { padding:10px 16px; border-radius:8px; background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow); font-size:13px; animation:tin .2s; max-width:360px; }
+  #toast div.ok { border-color:var(--ok); color:var(--ok); }
+  #toast div.err { border-color:var(--err); color:var(--err); }
+  @keyframes tin { from { transform:translateY(8px); opacity:0; } }
+  .hist-view { margin-top:12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>🛡 基于大语言模型的代码审计系统</h1>
+  <h1>🛡 明查秋毫<small>分层降噪 · 大模型代码审计</small></h1>
+  <nav id="nav">
+    <button data-p="audit" class="sel">审计</button>
+    <button data-p="history">历史</button>
+    <button data-p="kb">知识库</button>
+    <button data-p="rules">规则库</button>
+    <button data-p="settings">设置</button>
+    <button data-p="mcp">MCP</button>
+  </nav>
   <div class="env">
     <span id="env-llm"><span class="dot off"></span>模型未就绪</span>
     <span id="env-kb">知识库 …</span>
     <span id="env-rs">规则 …</span>
+    <button id="theme-btn" title="切换深色/浅色">🌙 深色</button>
   </div>
 </header>
 <main>
-  <section class="panel">
-    <h2>审计配置</h2>
-    <label>目标路径（.py 文件或文件夹）</label>
-    <input type="text" id="target" placeholder="可点下方按钮选择，或粘贴路径">
-    <div class="pickrow">
-      <button id="pick-file">选择文件</button>
-      <button id="pick-dir">选择文件夹</button>
+
+<!-- ═══════════ 审计页 ═══════════ -->
+<section class="page on" id="page-audit">
+  <div class="grid2">
+    <section class="panel">
+      <h2>审计配置</h2>
+      <label>目标路径（.py 文件或文件夹）</label>
+      <input type="text" id="target" placeholder="可点下方按钮选择，或粘贴路径">
+      <div class="pickrow">
+        <button id="pick-file">选择文件</button>
+        <button id="pick-dir">选择文件夹</button>
+      </div>
+      <label>模式</label>
+      <div class="segs" id="modes">
+        <button data-v="static" class="sel">静态检查（免费）</button>
+        <button data-v="ai">AI 深度审计</button>
+      </div>
+      <label>粒度（AI 模式生效）</label>
+      <div class="segs" id="depths">
+        <button data-v="file" class="sel">文件级</button>
+        <button data-v="function">函数级</button>
+        <button data-v="project">工程级</button>
+      </div>
+      <label class="ckrow"><input type="checkbox" id="incr"> 增量审计——只扫 git 相对 HEAD 的变更文件</label>
+      <label class="ckrow"><input type="checkbox" id="cross"> 双模型交叉复核（需设置第二模型）</label>
+      <label class="ckrow"><input type="checkbox" id="fewshot" checked> few-shot 校准示例</label>
+      <button id="run" class="btn">开始审计（Ctrl+Enter）</button>
+      <div class="btnrow"><button id="cancel" class="btn ghost sm" style="display:none">取消任务</button></div>
+      <div id="status"></div>
+      <div id="pbar"><i></i></div>
+      <pre id="log">等待任务…</pre>
+    </section>
+    <section class="panel" id="out">
+      <div id="empty">左侧选路径，开始第一次审计<br><small>静态检查免费秒出；AI 深度审计显示逐步进度，完成自动存入历史</small></div>
+      <div id="errbox"></div>
+      <div id="stats" style="display:none"></div>
+      <div class="tabs" id="tabs" style="display:none">
+        <button class="sel" data-v="html">报告视图</button>
+        <button data-v="md">Markdown 原文</button>
+        <span style="flex:1"></span>
+        <button data-v="dl-html" title="下载交互报告">⬇ HTML</button>
+        <button data-v="dl-md" title="下载 Markdown">⬇ MD</button>
+        <button data-v="dl-json" title="下载结构化数据">⬇ JSON</button>
+      </div>
+      <iframe id="frame" style="display:none"></iframe>
+      <div id="md"></div>
+    </section>
+  </div>
+</section>
+
+<!-- ═══════════ 历史页 ═══════════ -->
+<section class="page" id="page-history">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">审计历史</h2>
+      <span class="muted">完成任务自动存档，保留最近 50 次</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="hist-refresh">刷新</button>
     </div>
-    <label>模式</label>
-    <div class="segs" id="modes">
-      <button data-v="static" class="sel">静态检查（免费）</button>
-      <button data-v="ai">AI 深度审计</button>
+    <table id="hist-table">
+      <thead><tr><th>时间</th><th>目标</th><th>模式</th><th>问题数</th><th>严重度分布</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="hist-empty" class="muted" style="display:none;padding:20px;text-align:center">暂无历史记录</div>
+    <div class="hist-view" id="hist-view" style="display:none">
+      <div class="toolbar">
+        <b id="hist-title"></b><span style="flex:1"></span>
+        <button class="btn ghost sm" id="hist-dl-html">⬇ HTML</button>
+        <button class="btn ghost sm" id="hist-dl-md">⬇ MD</button>
+        <button class="btn ghost sm" id="hist-dl-json">⬇ JSON</button>
+        <button class="btn ghost sm" id="hist-close">收起</button>
+      </div>
+      <iframe id="hist-frame" style="width:100%;height:60vh;border:1px solid var(--line);border-radius:6px;background:#fff"></iframe>
     </div>
-    <label>粒度（AI 模式生效）</label>
-    <div class="segs" id="depths">
-      <button data-v="file" class="sel">文件级</button>
-      <button data-v="function">函数级</button>
-      <button data-v="project">工程级</button>
+  </div>
+</section>
+
+<!-- ═══════════ 知识库页 ═══════════ -->
+<section class="page" id="page-kb">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">缺陷知识库</h2>
+      <input type="text" id="kb-search" placeholder="搜索 ID / 标题 / 触发词…">
+      <span class="muted" id="kb-count"></span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="kb-reindex" title="清空向量缓存，下次检索自动重建">重建向量索引</button>
+      <button class="btn sm" id="kb-add">＋ 新增条目</button>
     </div>
-    <label class="ckrow"><input type="checkbox" id="incr"> 增量审计——只扫 git 相对 HEAD 的变更文件（需目标为 git 仓库）</label>
-    <button id="run">开始审计</button>
-    <div id="status"></div>
-    <pre id="log">等待任务…</pre>
-  </section>
-  <section class="panel" id="out">
-    <div id="empty">左侧选路径，开始第一次审计<br><small>静态检查免费秒出；AI 深度审计在右侧显示逐步进度</small></div>
-    <div id="errbox"></div>
-    <div id="stats" style="display:none"></div>
-    <div class="tabs" id="tabs" style="display:none">
-      <button class="sel" data-v="html">报告视图</button>
-      <button data-v="md">Markdown 原文</button>
+    <p class="muted" style="margin-bottom:10px">内置条目只读（评测口径保护）；自定义条目写入 knowledge/defects/custom.json，保存即生效。</p>
+    <div class="card-list" id="kb-list"></div>
+  </div>
+</section>
+
+<!-- ═══════════ 规则库页 ═══════════ -->
+<section class="page" id="page-rules">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">硬性规则库</h2>
+      <input type="text" id="rule-search" placeholder="搜索 ID / 标题…">
+      <span class="muted" id="rule-count"></span>
+      <span style="flex:1"></span>
+      <button class="btn sm" id="rule-add">＋ 自定义规则</button>
     </div>
-    <iframe id="frame" style="display:none"></iframe>
-    <div id="md"></div>
-  </section>
+    <p class="muted" style="margin-bottom:10px">内置规则只读；自定义规则保存前强制正则校验，写入即纳入静态引擎。</p>
+    <table id="rule-table">
+      <thead><tr><th>ID</th><th>标题</th><th>严重度</th><th>类别</th><th>来源</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════ 设置页 ═══════════ -->
+<section class="page" id="page-settings">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">模型与运行设置</h2>
+      <span class="muted">保存到本机 .env，密钥不回显明文、不上传任何外部服务</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="set-test">测试连通性</button>
+      <button class="btn sm" id="set-save">保存设置</button>
+    </div>
+    <div class="form-grid" id="set-form"></div>
+    <div id="set-result" class="muted" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- ═══════════ MCP 页 ═══════════ -->
+<section class="page" id="page-mcp">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">MCP 服务器接入</h2>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="mcp-test">连接自检</button>
+      <button class="btn sm" id="mcp-copy">复制配置</button>
+    </div>
+    <p class="muted" style="margin-bottom:10px">把审计能力开放给 Claude Desktop、Cursor 等 MCP 客户端：复制下方片段，粘进客户端配置文件的 mcpServers 字段后重启客户端。暴露 6 个工具：audit_code / list_rules / search_knowledge / list_knowledge / mark_false_positive / audit_history。</p>
+    <pre class="code" id="mcp-config">加载中…</pre>
+    <div id="mcp-result" class="muted" style="margin-top:12px"></div>
+    <p class="muted" style="margin-top:14px">命令行手动启动：<code>python -m codeaudit mcp</code>（绿色版：<code>CodeAudit.exe --mcp</code>）。服务器只在本机标准输入输出上通信，不监听网络端口。</p>
+  </div>
+</section>
+
 </main>
+
+<!-- 知识条目编辑对话框 -->
+<dialog id="kb-dialog">
+  <h3 id="kb-dialog-title">新增知识条目</h3>
+  <div class="form-grid">
+    <div><label>ID（如 CWE-1234）</label><input type="text" id="kbf-id"></div>
+    <div><label>标题</label><input type="text" id="kbf-title"></div>
+    <div><label>类别</label><select id="kbf-category"><option value="security">security 安全</option><option value="logic">logic 逻辑</option><option value="style">style 规范</option><option value="engineering">engineering 工程</option></select></div>
+    <div><label>严重度</label><select id="kbf-severity"><option value="critical">critical 严重</option><option value="high">high 高危</option><option value="medium" selected>medium 中危</option><option value="low">low 低危</option></select></div>
+    <div class="full"><label>缺陷模式描述</label><textarea id="kbf-pattern"></textarea></div>
+    <div class="full"><label>危害</label><textarea id="kbf-impact" style="min-height:44px"></textarea></div>
+    <div class="full"><label>修复要点</label><textarea id="kbf-fix" style="min-height:44px"></textarea></div>
+    <div><label>标签（逗号分隔）</label><input type="text" id="kbf-tags"></div>
+    <div><label>触发词（逗号分隔）</label><input type="text" id="kbf-triggers"></div>
+    <div class="full"><label>来源（CWE/OWASP 链接等）</label><input type="text" id="kbf-source"></div>
+  </div>
+  <div class="btnrow" style="margin-top:14px;justify-content:flex-end">
+    <button class="btn ghost" id="kbf-cancel">取消</button>
+    <button class="btn" id="kbf-save">保存</button>
+  </div>
+</dialog>
+
+<!-- 规则编辑对话框 -->
+<dialog id="rule-dialog">
+  <h3 id="rule-dialog-title">自定义规则</h3>
+  <div class="form-grid">
+    <div><label>ID（如 R-CUSTOM-001）</label><input type="text" id="rf-id"></div>
+    <div><label>标题</label><input type="text" id="rf-title"></div>
+    <div><label>类别</label><select id="rf-category"><option value="security">security 安全</option><option value="logic">logic 逻辑</option><option value="style">style 规范</option><option value="engineering">engineering 工程</option></select></div>
+    <div><label>严重度</label><select id="rf-severity"><option value="critical">critical 严重</option><option value="high">high 高危</option><option value="medium" selected>medium 中危</option><option value="low">low 低危</option></select></div>
+    <div class="full"><label>匹配正则（Python re，逐行匹配）</label><textarea id="rf-pattern"></textarea></div>
+    <div class="full"><label>样例代码（试跑预览命中行）</label><textarea id="rf-sample" placeholder="粘贴几行代码，点「试跑」看命中"></textarea></div>
+    <div class="full muted" id="rf-hits"></div>
+    <div><label>同行豁免词（逗号分隔）</label><input type="text" id="rf-exclude"></div>
+    <div><label>来源</label><input type="text" id="rf-source"></div>
+    <div class="full"><label>为什么是问题</label><textarea id="rf-why" style="min-height:44px"></textarea></div>
+    <div class="full"><label>修复建议</label><textarea id="rf-suggestion" style="min-height:44px"></textarea></div>
+  </div>
+  <div class="btnrow" style="margin-top:14px;justify-content:flex-end">
+    <button class="btn ghost" id="rf-test">试跑</button>
+    <button class="btn ghost" id="rf-cancel">取消</button>
+    <button class="btn" id="rf-save">保存</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
 <script>
 const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let mode = "static", depth = "file", polling = null, tick = null, lastLog = "";
+let curJob = null, lastResult = null, histResult = null;
+let kbItems = [], ruleItems = [], setFields = {};
+
+function toast(msg, kind) {
+  const d = document.createElement("div");
+  d.className = kind || ""; d.textContent = msg;
+  $("#toast").appendChild(d);
+  setTimeout(() => d.remove(), 3600);
+}
+async function api(url, opt) {
+  const r = await fetch(url, opt);
+  let j = null; try { j = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error((j && (j.detail || j.error)) || ("请求失败 " + r.status));
+  return j;
+}
+const post = (url, body) => api(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+const del = url => api(url, {method:"DELETE"});
+
+/* ---------- 主题 ---------- */
+function applyTheme(t) {
+  document.body.classList.toggle("dark", t === "dark");
+  $("#theme-btn").textContent = t === "dark" ? "☀ 浅色" : "🌙 深色";
+  localStorage.setItem("ca-theme", t);
+}
+applyTheme(localStorage.getItem("ca-theme") || "light");
+$("#theme-btn").onclick = () => applyTheme(document.body.classList.contains("dark") ? "light" : "dark");
+
+/* ---------- 页签 ---------- */
+const pageLoad = {history: loadHistory, kb: loadKB, rules: loadRules, settings: loadSettings, mcp: loadMCP};
+$("#nav").querySelectorAll("button").forEach(b => b.onclick = () => {
+  $("#nav").querySelectorAll("button").forEach(x => x.classList.toggle("sel", x === b));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("on", p.id === "page-" + b.dataset.p));
+  const fn = pageLoad[b.dataset.p]; if (fn) fn();
+});
 
 function seg(el, cb) {
   el.querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -103,14 +357,19 @@ function seg(el, cb) {
 }
 seg($("#modes"), v => mode = v);
 seg($("#depths"), v => depth = v);
-seg($("#tabs"), v => {
-  const showFrame = v === "html";
-  $("#frame").style.setProperty("display", showFrame ? "block" : "none", "important");
-  $("#md").style.setProperty("display", showFrame ? "none" : "block", "important");
-});
 
-// 拖拽：阻止 webview 默认的"打开文件"导航；能拿到真实路径就填入，
-// 拿不到（浏览器出于安全不提供 path）则提示改用选择按钮。
+/* ---------- 环境自检 ---------- */
+function refreshEnv() {
+  fetch("/api/check").then(r => r.json()).then(c => {
+    $("#env-llm").innerHTML = `<span class="dot ${c.llm_ready?"on":"off"}"></span>${esc(c.llm_ready ? c.model : "模型未配置")}`;
+    $("#env-kb").textContent = `知识库 ${c.knowledge} 条`;
+    $("#env-rs").textContent = `规则 ${c.rules} 条`;
+    $("#cross").parentElement.title = c.reviewer_ready ? `第二模型：${c.reviewer_model}` : "未配置第二模型，请到设置页填写";
+  }).catch(() => {});
+}
+refreshEnv();
+
+/* ---------- 审计 ---------- */
 window.addEventListener("dragover", e => { e.preventDefault(); e.stopPropagation(); });
 window.addEventListener("drop", e => {
   e.preventDefault(); e.stopPropagation();
@@ -120,32 +379,41 @@ window.addEventListener("drop", e => {
   else { $("#status").textContent = "拖拽无法获取路径，请用「选择文件 / 选择文件夹」按钮"; }
 });
 async function pick(kind) {
+  $("#status").textContent = "已弹出系统选择框…";
   try {
     const r = await (await fetch(`/api/pick?kind=${kind}`)).json();
     if (r.error) { $("#status").textContent = r.error; return; }
-    if (r.path) $("#target").value = r.path;
+    if (r.path) { $("#target").value = r.path; $("#status").textContent = ""; }
+    else $("#status").textContent = "未选择";
   } catch (e) { $("#status").textContent = "选择框不可用，请手动输入路径"; }
 }
 $("#pick-file").onclick = () => pick("file");
 $("#pick-dir").onclick = () => pick("dir");
 
-fetch("/api/check").then(r => r.json()).then(c => {
-  $("#env-llm").innerHTML = `<span class="dot ${c.llm_ready?"on":"off"}"></span>${c.llm_ready ? c.model : "模型未配置"}`;
-  $("#env-kb").textContent = `知识库 ${c.knowledge} 条`;
-  $("#env-rs").textContent = `规则 ${c.rules} 条`;
-}).catch(() => {});
-
-$("#run").onclick = async () => {
+async function startAudit() {
   const target = $("#target").value.trim();
-  if (!target) { alert("请先选择或填入路径"); return; }
+  if (!target) { toast("请先选择或填入路径", "err"); return; }
   $("#run").disabled = true; $("#empty").style.display = "none";
   $("#errbox").style.display = "none"; $("#log").textContent = "";
+  $("#pbar").style.display = "block"; $("#pbar i").style.width = "0";
+  $("#cancel").style.display = "inline-block";
   $("#status").innerHTML = `<span class="spin">⏳</span> 启动任务…`;
-  const r = await fetch("/api/audit", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({target, mode, depth, incremental: $("#incr").checked})});
-  const j = await r.json();
-  if (!r.ok) { fail(j.detail || "启动失败"); return; }
-  poll(j.job_id);
+  try {
+    const j = await post("/api/audit", {target, mode, depth,
+      incremental: $("#incr").checked, cross_review: $("#cross").checked,
+      examples: $("#fewshot").checked});
+    curJob = j.job_id; poll(j.job_id);
+  } catch (e) { fail(e.message); }
+}
+$("#run").onclick = startAudit;
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !$("#run").disabled
+      && $("#page-audit").classList.contains("on")) startAudit();
+});
+$("#cancel").onclick = async () => {
+  if (!curJob) return;
+  try { const r = await post(`/api/cancel/${curJob}`, {}); toast(r.ok ? r.note : "任务已结束", r.ok ? "ok" : ""); }
+  catch (e) { toast(e.message, "err"); }
 };
 
 function poll(id) {
@@ -159,41 +427,290 @@ function poll(id) {
     let s; try { s = await (await fetch(`/api/job/${id}`)).json(); } catch (_) { return; }
     if (s.progress && s.progress.join("\n") !== lastLog) {
       lastLog = s.progress.join("\n");
-      $("#log").textContent = s.progress.join("\n");
+      $("#log").textContent = lastLog;
       $("#log").scrollTop = $("#log").scrollHeight;
+      const m = lastLog.match(/\[(\d+)\/(\d+)\]/g);
+      if (m) { const last = m[m.length-1].match(/\[(\d+)\/(\d+)\]/);
+        $("#pbar i").style.width = Math.round(100 * last[1] / Math.max(1, last[2])) + "%"; }
     }
     if (s.status === "done") { clearInterval(polling); clearInterval(tick); render(id); }
     else if (s.status === "error") { clearInterval(polling); clearInterval(tick); fail(s.error); }
+    else if (s.status === "cancelled") { clearInterval(polling); clearInterval(tick); fail("任务已取消"); }
   }, 1000);
 }
 
-async function render(id) {
-  const d = await (await fetch(`/api/result/${id}`)).json();
-  $("#frame").srcdoc = d.html;
-  $("#md").textContent = d.markdown;
+function statsChips(d) {
   const st = d.stats || {}, sv = st.by_severity || {};
   const sec = (sv["严重"]||sv.critical||0), high = (sv["高危"]||sv.high||0);
   const midlow = (sv["中危"]||sv.medium||0)+(sv["低危"]||sv.low||0);
-  $("#status").textContent = "✔ 完成";
-  $("#stats").style.display = "flex"; $("#tabs").style.display = "flex";
-  $("#frame").style.setProperty("display", "block", "important");
-  $("#md").style.setProperty("display", "none", "important");
-  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x.dataset.v === "html"));
-  $("#stats").innerHTML =
-    `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
-    `<span class="chip" style="color:#d05c5c">严重 <b>${sec}</b></span>` +
-    `<span class="chip" style="color:#c07a1d">高危 <b>${high}</b></span>` +
-    `<span class="chip" style="color:#5a7396">中低危 <b>${midlow}</b></span>` +
-    (d.engine.incremental ? `<span class="chip" style="color:#2fbf8f">增量 <b>${d.engine.incremental.scanned}</b>/${d.engine.incremental.changed} 变更文件</span>` : ``) +
-    `<span class="chip">引擎 ${d.engine.model || "?"}${d.engine.llm_used ? " · AI" : " · 纯静态"} · ${st.elapsed_sec ?? 0}s</span>`;
-  $("#run").disabled = false;
+  return `<span class="chip">共 <b>${st.total ?? 0}</b> 条</span>` +
+    `<span class="chip" style="color:var(--err)">严重 <b>${sec}</b></span>` +
+    `<span class="chip" style="color:var(--warn)">高危 <b>${high}</b></span>` +
+    `<span class="chip">中低危 <b>${midlow}</b></span>` +
+    (d.engine.incremental ? `<span class="chip" style="color:var(--ok)">增量 <b>${d.engine.incremental.scanned}</b>/${d.engine.incremental.changed} 变更文件</span>` : ``) +
+    `<span class="chip">引擎 ${esc(d.engine.model || "?")}${d.engine.llm_used ? " · AI" : " · 纯静态"} · ${st.elapsed_sec ?? 0}s</span>`;
+}
+
+async function render(id) {
+  try {
+    const d = await api(`/api/result/${id}`);
+    lastResult = d;
+    $("#frame").srcdoc = d.html;
+    $("#md").textContent = d.markdown;
+    $("#status").textContent = "✔ 完成" + (d.hist_id ? "（已存入历史）" : "");
+    $("#pbar i").style.width = "100%";
+    $("#stats").style.display = "flex"; $("#tabs").style.display = "flex";
+    $("#frame").style.setProperty("display", "block", "important");
+    $("#md").style.setProperty("display", "none", "important");
+    document.querySelectorAll("#tabs button[data-v]").forEach(x => x.classList.toggle("sel", x.dataset.v === "html"));
+    $("#stats").innerHTML = statsChips(d);
+    $("#run").disabled = false; $("#cancel").style.display = "none";
+  } catch (e) { fail(e.message); }
 }
 
 function fail(msg) {
   $("#status").textContent = "";
+  $("#pbar").style.display = "none";
   $("#errbox").textContent = "⚠ " + msg; $("#errbox").style.display = "block";
-  $("#run").disabled = false;
+  $("#run").disabled = false; $("#cancel").style.display = "none";
 }
+
+function download(name, content, mime) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], {type: mime || "text/plain;charset=utf-8"}));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const stamp = () => new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+$("#tabs").addEventListener("click", e => {
+  const v = e.target.dataset && e.target.dataset.v; if (!v) return;
+  if (v === "html" || v === "md") {
+    const showFrame = v === "html";
+    $("#frame").style.setProperty("display", showFrame ? "block" : "none", "important");
+    $("#md").style.setProperty("display", showFrame ? "none" : "block", "important");
+    document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("sel", x === e.target));
+  } else if (lastResult) {
+    if (v === "dl-html") download(`审计报告-${stamp()}.html`, lastResult.html, "text/html;charset=utf-8");
+    if (v === "dl-md") download(`审计报告-${stamp()}.md`, lastResult.markdown, "text/markdown;charset=utf-8");
+    if (v === "dl-json") download(`审计报告-${stamp()}.json`, lastResult.json, "application/json;charset=utf-8");
+  } else toast("还没有可导出的结果", "err");
+});
+
+/* ---------- 历史 ---------- */
+async function loadHistory() {
+  try {
+    const d = await api("/api/history");
+    const tb = $("#hist-table tbody"); tb.innerHTML = "";
+    $("#hist-empty").style.display = d.items.length ? "none" : "block";
+    $("#hist-table").style.display = d.items.length ? "table" : "none";
+    d.items.forEach(it => {
+      const sv = it.by_severity || {};
+      const dist = ["critical","high","medium","low"].filter(k => sv[k]).map(k => `<span class="tag ${k}">${k} ${sv[k]}</span>`).join(" ") || '<span class="muted">—</span>';
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${esc(it.time_str)}</td><td title="${esc(it.target)}">${esc(it.target.length > 46 ? "…" + it.target.slice(-45) : it.target)}</td>` +
+        `<td><span class="tag">${esc(it.mode)}${it.depth ? " · " + esc(it.depth) : ""}</span></td><td><b>${it.total}</b></td><td>${dist}</td>` +
+        `<td><button class="btn ghost sm" data-act="view">查看</button> <button class="btn danger sm" data-act="del">删除</button></td>`;
+      tr.querySelector('[data-act="view"]').onclick = () => viewHistory(it);
+      tr.querySelector('[data-act="del"]').onclick = async () => {
+        if (!confirm(`删除 ${it.time_str} 的历史记录？`)) return;
+        try { await del(`/api/history/${it.id}`); toast("已删除", "ok"); loadHistory(); } catch (e) { toast(e.message, "err"); }
+      };
+      tb.appendChild(tr);
+    });
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#hist-refresh").onclick = loadHistory;
+async function viewHistory(it) {
+  try {
+    const d = await api(`/api/history/${it.id}`);
+    histResult = d;
+    $("#hist-title").textContent = `${it.time_str} · ${it.target}`;
+    $("#hist-frame").srcdoc = d.html;
+    $("#hist-view").style.display = "block";
+    $("#hist-view").scrollIntoView({behavior:"smooth"});
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#hist-close").onclick = () => { $("#hist-view").style.display = "none"; histResult = null; };
+$("#hist-dl-html").onclick = () => histResult && download(`历史报告-${stamp()}.html`, histResult.html, "text/html;charset=utf-8");
+$("#hist-dl-md").onclick = () => histResult && download(`历史报告-${stamp()}.md`, histResult.markdown, "text/markdown;charset=utf-8");
+$("#hist-dl-json").onclick = () => histResult && download(`历史报告-${stamp()}.json`, histResult.json, "application/json;charset=utf-8");
+
+/* ---------- 知识库 ---------- */
+async function loadKB() {
+  try {
+    const d = await api("/api/kb");
+    kbItems = d.items; renderKB();
+  } catch (e) { toast(e.message, "err"); }
+}
+function renderKB() {
+  const q = $("#kb-search").value.trim().toLowerCase();
+  const rows = kbItems.filter(it => !q || [it.id, it.title, (it.triggers||[]).join(" "), (it.tags||[]).join(" ")].join(" ").toLowerCase().includes(q));
+  $("#kb-count").textContent = `${rows.length}/${kbItems.length} 条`;
+  $("#kb-list").innerHTML = rows.map(it => `
+    <div class="kcard">
+      <h3>${esc(it.id)} · ${esc(it.title)} <span class="tag ${esc(it.severity)}">${esc(it.severity)}</span> ${it._builtin ? '<span class="tag">内置</span>' : '<span class="tag ok">自定义</span>'}</h3>
+      <p>${esc(it.pattern || "")}</p>
+      <p class="muted">${esc(it._file)}${it.source ? " · " + esc(String(it.source).slice(0, 60)) : ""}</p>
+      ${it._builtin ? "" : `<div class="btnrow"><button class="btn ghost sm" data-id="${esc(it.id)}" data-act="edit">编辑</button><button class="btn danger sm" data-id="${esc(it.id)}" data-act="del">删除</button></div>`}
+    </div>`).join("");
+  $("#kb-list").querySelectorAll("button").forEach(b => b.onclick = () => {
+    const it = kbItems.find(x => x.id === b.dataset.id);
+    if (b.dataset.act === "edit") openKBDialog(it);
+    else if (confirm(`删除自定义条目 ${it.id}？`)) del(`/api/kb/${encodeURIComponent(it.id)}`).then(() => { toast("已删除", "ok"); loadKB(); refreshEnv(); }).catch(e => toast(e.message, "err"));
+  });
+}
+$("#kb-search").oninput = renderKB;
+$("#kb-add").onclick = () => openKBDialog(null);
+$("#kb-reindex").onclick = async () => {
+  try { const r = await post("/api/kb/reindex", {}); toast(`已清空 ${r.removed} 个向量缓存，下次检索自动重建`, "ok"); }
+  catch (e) { toast(e.message, "err"); }
+};
+function openKBDialog(it) {
+  $("#kb-dialog-title").textContent = it ? `编辑 ${it.id}` : "新增知识条目";
+  $("#kbf-id").value = it ? it.id : ""; $("#kbf-id").disabled = !!it;
+  $("#kbf-title").value = it ? it.title : "";
+  $("#kbf-category").value = it ? it.category : "security";
+  $("#kbf-severity").value = it ? it.severity : "medium";
+  $("#kbf-pattern").value = it ? (it.pattern || "") : "";
+  $("#kbf-impact").value = it ? (it.impact || "") : "";
+  $("#kbf-fix").value = it ? (it.fix || "") : "";
+  $("#kbf-tags").value = it ? (it.tags || []).join(", ") : "";
+  $("#kbf-triggers").value = it ? (it.triggers || []).join(", ") : "";
+  $("#kbf-source").value = it ? (it.source || "") : "";
+  $("#kb-dialog").showModal();
+}
+$("#kbf-cancel").onclick = () => $("#kb-dialog").close();
+$("#kbf-save").onclick = async () => {
+  const split = s => s.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  try {
+    await post("/api/kb", {id: $("#kbf-id").value.trim(), title: $("#kbf-title").value.trim(),
+      category: $("#kbf-category").value, severity: $("#kbf-severity").value,
+      pattern: $("#kbf-pattern").value, impact: $("#kbf-impact").value, fix: $("#kbf-fix").value,
+      tags: split($("#kbf-tags").value), triggers: split($("#kbf-triggers").value),
+      source: $("#kbf-source").value.trim()});
+    $("#kb-dialog").close(); toast("已保存，检索即时生效", "ok"); loadKB(); refreshEnv();
+  } catch (e) { toast(e.message, "err"); }
+};
+
+/* ---------- 规则库 ---------- */
+async function loadRules() {
+  try {
+    const d = await api("/api/rules");
+    ruleItems = d.rules; renderRules();
+  } catch (e) { toast(e.message, "err"); }
+}
+function renderRules() {
+  const q = $("#rule-search").value.trim().toLowerCase();
+  const rows = ruleItems.filter(r => !q || (r.id + " " + r.title).toLowerCase().includes(q));
+  $("#rule-count").textContent = `${rows.length}/${ruleItems.length} 条`;
+  const tb = $("#rule-table tbody"); tb.innerHTML = "";
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><code>${esc(r.id)}</code></td><td>${esc(r.title)}</td>` +
+      `<td><span class="tag ${esc(r.severity)}">${esc(r.severity)}</span></td><td>${esc(r.category)}</td>` +
+      `<td>${r._builtin ? '<span class="tag">内置</span>' : '<span class="tag ok">自定义</span>'}</td>` +
+      `<td>${r._builtin ? '<span class="muted">只读</span>' : `<button class="btn ghost sm" data-act="edit">编辑</button> <button class="btn danger sm" data-act="del">删除</button>`}</td>`;
+    if (!r._builtin) {
+      tr.querySelector('[data-act="edit"]').onclick = () => openRuleDialog(r);
+      tr.querySelector('[data-act="del"]').onclick = async () => {
+        if (!confirm(`删除自定义规则 ${r.id}？`)) return;
+        try { await del(`/api/rules/${encodeURIComponent(r.id)}`); toast("已删除", "ok"); loadRules(); refreshEnv(); } catch (e) { toast(e.message, "err"); }
+      };
+    }
+    tb.appendChild(tr);
+  });
+}
+$("#rule-search").oninput = renderRules;
+$("#rule-add").onclick = () => openRuleDialog(null);
+function openRuleDialog(r) {
+  $("#rule-dialog-title").textContent = r ? `编辑 ${r.id}` : "自定义规则";
+  $("#rf-id").value = r ? r.id : ""; $("#rf-id").disabled = !!r;
+  $("#rf-title").value = r ? r.title : "";
+  $("#rf-category").value = r ? r.category : "security";
+  $("#rf-severity").value = r ? r.severity : "medium";
+  $("#rf-pattern").value = r ? (r.pattern || "") : "";
+  $("#rf-sample").value = ""; $("#rf-hits").innerHTML = "";
+  $("#rf-exclude").value = r ? (r.exclude || []).join(", ") : "";
+  $("#rf-source").value = r ? (r.source || "") : "";
+  $("#rf-why").value = r ? (r.why || "") : "";
+  $("#rf-suggestion").value = r ? (r.suggestion || "") : "";
+  $("#rule-dialog").showModal();
+}
+$("#rf-cancel").onclick = () => $("#rule-dialog").close();
+$("#rf-test").onclick = async () => {
+  try {
+    const r = await post("/api/rules/test", {pattern: $("#rf-pattern").value, sample: $("#rf-sample").value});
+    $("#rf-hits").innerHTML = r.hits.length
+      ? `<span class="muted">命中 ${r.hits.length} 行：</span><pre class="code">${r.hits.map(h => `${h.line}: ${esc(h.text)}`).join("\n")}</pre>`
+      : '<span class="muted">样例无命中（正则合法）</span>';
+  } catch (e) { $("#rf-hits").innerHTML = `<span style="color:var(--err)">${esc(e.message)}</span>`; }
+};
+$("#rf-save").onclick = async () => {
+  const split = s => s.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  try {
+    await post("/api/rules", {id: $("#rf-id").value.trim(), title: $("#rf-title").value.trim(),
+      pattern: $("#rf-pattern").value, category: $("#rf-category").value, severity: $("#rf-severity").value,
+      exclude: split($("#rf-exclude").value), source: $("#rf-source").value.trim(),
+      why: $("#rf-why").value, suggestion: $("#rf-suggestion").value});
+    $("#rule-dialog").close(); toast("已保存，静态引擎即时生效", "ok"); loadRules(); refreshEnv();
+  } catch (e) { toast(e.message, "err"); }
+};
+
+/* ---------- 设置 ---------- */
+async function loadSettings() {
+  try {
+    const d = await api("/api/settings");
+    setFields = d.fields;
+    $("#set-form").innerHTML = Object.entries(d.fields).map(([k, f]) => `
+      <div class="${k.endsWith("API_KEY") ? "" : ""}">
+        <label>${esc(f.label)}${f.secret ? "（留空 = 保持不变）" : ""}</label>
+        <input type="${f.secret ? "password" : "text"}" id="set-${k}"
+          placeholder="${f.secret ? (f.configured ? "已配置：" + esc(f.value) : "未配置") : ""}"
+          value="${f.secret ? "" : esc(f.value)}" autocomplete="off">
+      </div>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#set-save").onclick = async () => {
+  const updates = {};
+  Object.keys(setFields).forEach(k => { const v = $("#set-" + k).value; if (v !== "" || !setFields[k].secret) updates[k] = v; });
+  try {
+    const r = await post("/api/settings", {updates});
+    toast(r.changed.length ? `已保存 ${r.changed.length} 项：${r.changed.join(", ")}` : "没有变化", "ok");
+    loadSettings(); refreshEnv();
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#set-test").onclick = async () => {
+  $("#set-result").textContent = "正在用当前配置调用模型…";
+  try {
+    const r = await post("/api/settings/test", {});
+    $("#set-result").innerHTML = r.ok
+      ? `<span style="color:var(--ok)">✔ 连通正常 · ${esc(r.model)} · 回复「${esc(r.reply)}」</span>`
+      : `<span style="color:var(--err)">✘ ${esc(r.error)}</span>`;
+  } catch (e) { $("#set-result").innerHTML = `<span style="color:var(--err)">✘ ${esc(e.message)}</span>`; }
+};
+
+/* ---------- MCP ---------- */
+let mcpConfigText = "";
+async function loadMCP() {
+  try {
+    const d = await api("/api/mcp/config");
+    mcpConfigText = JSON.stringify(d.config, null, 2);
+    $("#mcp-config").textContent = mcpConfigText;
+  } catch (e) { $("#mcp-config").textContent = e.message; }
+}
+$("#mcp-copy").onclick = async () => {
+  try { await navigator.clipboard.writeText(mcpConfigText); toast("配置已复制", "ok"); }
+  catch (_) { toast("复制失败，请手动选择文本复制", "err"); }
+};
+$("#mcp-test").onclick = async () => {
+  $("#mcp-result").textContent = "正在启动 MCP 子进程做握手自检…";
+  try {
+    const r = await post("/api/mcp/selftest", {});
+    $("#mcp-result").innerHTML = r.ok
+      ? `<span style="color:var(--ok)">✔ 握手成功 · ${esc(r.server.name || "")} v${esc(r.server.version || "")} · ${r.tools.length} 个工具就绪：${r.tools.map(esc).join(" / ")}</span>`
+      : `<span style="color:var(--err)">✘ 自检失败：${esc(r.error || "工具调用异常")}</span>`;
+  } catch (e) { $("#mcp-result").innerHTML = `<span style="color:var(--err)">✘ ${esc(e.message)}</span>`; }
+};
 </script>
 </body>
 </html>

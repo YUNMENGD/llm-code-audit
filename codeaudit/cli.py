@@ -68,9 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     rev.add_argument("libs", nargs="*", default=[],
                      help="库名（realtest/ 下目录名，如 click）；留空则评测 bench-real/ 全部")
     sub.add_parser("selfcheck", help="环境自检")
+    sub.add_parser("mcp", help="启动 MCP 服务器（stdio），供 Claude Desktop/Cursor 等客户端接入")
 
     a = ap.parse_args(argv)
 
+    if a.cmd == "mcp":
+        from .mcpserver import serve
+        return serve()
     if a.cmd == "selfcheck":
         return _selfcheck()
     if a.cmd == "rules":

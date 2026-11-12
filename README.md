@@ -87,13 +87,28 @@ python -m codeaudit audit . --changed-since HEAD~3
 # ②c CI 门禁：存在 ≥medium 问题时退出码 1（GitHub Actions 模板见 examples/codeaudit-gate.yml）
 python -m codeaudit audit . --fail-on medium
 
-# ③ 桌面应用（独立窗口，拖拽目录即审）
+# ③ 桌面应用（独立窗口：审计/历史/知识库/规则库/设置/MCP 六页签，深浅主题）
 python desktop.py
 
-# ④ 测试：162 项离线单测 + 六库回归红线
+# ③b MCP 服务器：把审计能力开放给 Claude Desktop / Cursor 等客户端
+python -m codeaudit mcp        # 绿色版：CodeAudit.exe --mcp
+# 客户端配置片段在桌面端「MCP」页一键复制，或 POST /api/mcp/selftest 自检握手
+
+# ④ 测试：203 项离线单测 + 六库回归红线
 python tests/test_offline.py
 python -m pytest tests
 ```
+
+### 桌面端功能一览
+
+| 页签 | 能力 |
+| --- | --- |
+| 审计 | 静态/AI 双模式、三粒度、增量审计、双模型交叉复核、few-shot 开关、真实进度条、任务取消、Ctrl+Enter 快捷启动 |
+| 历史 | 完成任务自动存档（保留最近 50 次），回看交互报告、删除、导出 HTML/MD/JSON |
+| 知识库 | 条目搜索/新增/编辑/删除（自定义写 `knowledge/defects/custom.json`，内置只读保护评测口径）、一键重建向量索引 |
+| 规则库 | 硬规则查看 + 自定义正则规则（保存前强制编译校验 + 样例试跑预览），写入即进静态引擎 |
+| 设置 | 模型/密钥/端点/温度等在线编辑（密钥脱敏回显、留空不改、只落本地 `.env`）、一键连通性测试 |
+| MCP | 6 个标准工具（audit_code / list_rules / search_knowledge / list_knowledge / mark_false_positive / audit_history），配置一键复制 + 子进程握手自检 |
 
 **团队分发无需装 Python**：`python tools/build_portable.py` 产出
 `dist/CodeAudit/CodeAudit.exe` 绿色版（约 104 MB，双击即用，`--selftest` 一键验收）。
@@ -126,5 +141,6 @@ llm-code-audit/
 
 ## 项目进度
 
-见 [docs/20天开发计划.md](docs/20天开发计划.md) 与申报书进度安排。
+当前路线图见 [docs/roadmap-v2.md](docs/roadmap-v2.md)（设置中心/知识库配置/MCP/历史等已落地）；
+历史阶段归档见 [docs/20天开发计划.md](docs/20天开发计划.md) 与申报书进度安排。
 协作规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
