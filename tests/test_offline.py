@@ -1066,4 +1066,167 @@ with tempfile.TemporaryDirectory() as _td:
         p["call"] == "Markup" for p in _tg.paths))
     check("真 web 输入流仍保留", any(p["call"] == "os.system" for p in _tg.paths))
 
+print("\n[40] options：预设/规则开关/阈值/忽略清单（默认口径不漂移）")
+from codeaudit import options as OP                    # noqa: E402
+_opt_bak = OP.OPTIONS_FILE.read_bytes() if OP.OPTIONS_FILE.exists() else None
+try:
+    _all = RL.load_rules()
+    check("默认全量不过滤", len(OP.filter_rules(_all, preset="full", disabled=[])) == len(_all))
+    _sec = OP.filter_rules(_all, preset="security", disabled=[])
+    check("安全预设只留安全类", _sec and all(r["category"] == "security" for r in _sec))
+    _qual = OP.filter_rules(_all, preset="quality", disabled=[])
+    check("质量预设排除安全类", _qual and all(r["category"] != "security" for r in _qual))
+    check("规则开关生效", len(OP.filter_rules(_all, preset="full",
+                                        disabled=[_all[0]["id"]])) == len(_all) - 1)
+    check("阈值判定正确", OP.sev_ok("critical", "high") and not OP.sev_ok("low", "high"))
+    _r = AuditReport(target="t", issues=[_mk_issue("R-A", "a.py", 1, "high"),
+                                         _mk_issue("R-B", "a.py", 2, "low")],
+                     stats={"total": 2})
+    _f = OP.filter_report(_r, "high")
+    check("报告裁剪并重算统计", len(_f.issues) == 1 and _f.stats["total"] == 1
+          and _f.stats["filtered_by_severity"] == 1)
+    check("原报告不被改动", len(_r.issues) == 2)
+    with tempfile.TemporaryDirectory() as _td:
+        _tp = Path(_td)
+        (_tp / "keep.py").write_text("x=1\n", encoding="utf-8")
+        (_tp / "vendor").mkdir()
+        (_tp / "vendor" / "skip.py").write_text("y=2\n", encoding="utf-8")
+        (_tp / ".auditignore").write_text("*/vendor/*\n", encoding="utf-8")
+        _got = {p.name for p in OP.collect_files(_tp, {".py"})}
+        check("忽略清单排除目录", _got == {"keep.py"})
+        check("关闭忽略则全收", {p.name for p in OP.collect_files(_tp, {".py"},
+                                                          use_ignore=False)}
+              == {"keep.py", "skip.py"})
+finally:
+    if _opt_bak is not None:
+        OP.OPTIONS_FILE.write_bytes(_opt_bak)
+    elif OP.OPTIONS_FILE.exists():
+        OP.OPTIONS_FILE.unlink()
+
+print("\n[41] scancache：内容哈希 + 规则指纹（改规则即失效）")
+from codeaudit import scancache as SC                  # noqa: E402
+_sc_bak = SC.CACHE_FILE.read_bytes() if SC.CACHE_FILE.exists() else None
+SC.clear()
+try:
+    with tempfile.TemporaryDirectory() as _td:
+        _f = Path(_td) / "c.py"
+        _f.write_text("eval(x)\n", encoding="utf-8")
+        _fp1 = SC.fingerprint(RL.load_rules())
+        check("初始未命中", SC.get(_f, _fp1) is None)
+        SC.put(_f, _fp1, [{"rule_id": "R-X", "path": str(_f), "line_start": 1,
+                           "title": "t", "severity": "high", "category": "security"}])
+        check("put 后命中", SC.get(_f, _fp1) is not None)
+        _f.write_text("eval(y)\n", encoding="utf-8")
+        check("内容变更即失效", SC.get(_f, _fp1) is None)
+        _fp2 = SC.fingerprint(RL.load_rules() + [{"id": "R-NEW", "pattern": "zz"}])
+        check("规则变更指纹变化", _fp1 != _fp2)
+        check("还原问题对象", SC.rows_to_issues(
+            [{"rule_id": "R-X", "path": "p", "line_start": 1, "severity": "high",
+              "category": "security"}])[0].rule_id == "R-X")
+finally:
+    SC.clear()
+    if _sc_bak is not None:
+        SC.CACHE_FILE.write_bytes(_sc_bak)
+
+print("\n[42] sarif / entropy / pdfout：导出与可选检测")
+from codeaudit import sarif as SF                      # noqa: E402
+from codeaudit import entropy as EN                    # noqa: E402
+from codeaudit import pdfout as PD                     # noqa: E402
+_rep_x = AuditReport(target="proj", issues=[
+    _mk_issue("R-SEC-001", "a.py", 3, "critical")],
+    engine={"model": "m"}, stats={"total": 1, "by_severity": {"critical": 1}})
+_sf = SF.to_sarif(_rep_x)
+check("SARIF 2.1.0 结构", _sf["version"] == "2.1.0"
+      and _sf["runs"][0]["tool"]["driver"]["rules"][0]["id"] == "R-SEC-001")
+check("SARIF 严重度映射", _sf["runs"][0]["results"][0]["level"] == "error")
+check("SARIF 行号区域", _sf["runs"][0]["results"][0]["locations"][0][
+    "physicalLocation"]["region"]["startLine"] == 3)
+check("熵函数单调性", EN.shannon("aaaaaaaa") < EN.shannon("aB3xY9qLmN7pRtVw"))
+_eh = EN.scan_source('K = "aB3xY9qLmN7pRtVwZ2sD5fGhJ8kQ"\n')
+check("高熵凭据命中", len(_eh) == 1 and _eh[0].rule_id == "R-SEC-ENTROPY"
+      and _eh[0].confidence == 0.6)
+check("占位符/路径/摘要不误报", EN.scan_source(
+    'a = "your_api_key_placeholder_here"\n'
+    'b = "/usr/local/share/some/long/path"\n'
+    'c = "d41d8cd98f00b204e9800998ecf8427e"\n'
+    'd = "aB3xY9qLmN7pRtVwZ2sD5fGhJ8kQ"  # nosec\n') == [])
+_brief_md = PD.render_brief_markdown(_rep_x)
+check("精简版只给清单", "精简版" in _brief_md and "| # |" in _brief_md
+      and "### " not in _brief_md and "**分析**" not in _brief_md)
+check("打印版 HTML 可生成", "<table>" in PD.render_print_html(_rep_x))
+
+print("\n[43] packs / hooks / review：共享、钩子与飞轮闸门")
+from codeaudit import packs as PK                      # noqa: E402
+from codeaudit import hooks as HK                      # noqa: E402
+from codeaudit import review as RV                     # noqa: E402
+_pack = PK.export_pack()
+check("包只含自定义条目", all(not r.get("_builtin") for r in _pack["rules"]))
+check("包校验和自洽", PK.import_pack(_pack, dry_run=True)["dry_run"])
+_bad = dict(_pack); _bad["rules"] = [{"id": "X"}]
+check("篡改包被拒", _raises(lambda: PK.import_pack(_bad)))
+check("非本工具包被拒", _raises(lambda: PK.import_pack({"pack": "other"})))
+check("钩子含跳过开关", "SKIP_CODEAUDIT" in HK.render())
+check("钩子阈值可配", "--min-severity medium" in HK.render("medium"))
+check("钩子非法阈值拒绝", _raises(lambda: HK.render("urgent")))
+with tempfile.TemporaryDirectory() as _td:
+    check("非 git 仓库拒装钩子", not HK.install(Path(_td))["ok"])
+_rv_bak = RV.REVIEW_FILE.read_bytes() if RV.REVIEW_FILE.exists() else None
+_fb_bak = FB.QUEUE.read_bytes() if FB.QUEUE.exists() else None
+_an_bak = RV.ANNOT_DIR
+try:
+    if RV.REVIEW_FILE.exists():
+        RV.REVIEW_FILE.unlink()
+    if FB.QUEUE.exists():
+        FB.QUEUE.unlink()
+    FB.add({"rule": "R-TEST-FP", "title": "测试误报", "path": "z.py", "line": 1,
+            "evidence": "e"})
+    _k = RV.rows()[0]["key"]
+    check("初始待评审", RV.rows()[0]["decision"] == "pending")
+    RV.set_decision(_k, "adopt", "test")
+    check("采纳后统计正确", RV.stats()["adopt"] == 1)
+    check("非法决定拒绝", _raises(lambda: RV.set_decision(_k, "maybe")))
+    check("提案带来源可溯源", "人工评审确认" in RV._proposals()[0]["source"])
+    with tempfile.TemporaryDirectory() as _td:
+        RV.ANNOT_DIR = Path(_td) / "ann"
+        _items = RV.annotate_items(_rep_x)
+        check("标注摊开带上下文", _items and "context" in _items[0])
+        _sv = RV.save_annotations("t1", _items, {"0": "T"})
+        check("标注落盘算精度", _sv["T"] == 1 and _sv["precision"] == 1.0
+              and Path(_sv["path"]).exists())
+        check("标注列表可读", RV.list_annotations()[0]["name"] == "t1")
+finally:
+    RV.ANNOT_DIR = _an_bak
+    if _rv_bak is not None:
+        RV.REVIEW_FILE.write_bytes(_rv_bak)
+    elif RV.REVIEW_FILE.exists():
+        RV.REVIEW_FILE.unlink()
+    if _fb_bak is not None:
+        FB.QUEUE.write_bytes(_fb_bak)
+    elif FB.QUEUE.exists():
+        FB.QUEUE.unlink()
+
+print("\n[44] notify / depscan：默认不外发、工具缺失如实报")
+from codeaudit import notify as NT                     # noqa: E402
+from codeaudit import depscan as DS                    # noqa: E402
+_pl = NT.summary_payload({"target_name": "proj", "total": 3,
+                          "by_severity": {"high": 3}, "mode": "static",
+                          "elapsed_sec": 1, "evidence": "SECRET", "source": "code"})
+check("通知只发摘要不含源码", "evidence" not in _pl and "source" not in _pl)
+check("未配置 webhook 不发送", not NT.webhook("", _pl)["ok"])
+check("非法协议拒绝", not NT.webhook("ftp://x", _pl)["ok"])
+check("默认关闭时不通知", NT.notify_done(_pl, {}) == {"system": None, "webhook": None})
+with tempfile.TemporaryDirectory() as _td:
+    check("无清单如实报", not DS.scan(Path(_td))["ok"])
+    (Path(_td) / "requirements.txt").write_text("demo==1.0\n", encoding="utf-8")
+    _fake = lambda cmd, cwd, t: json.dumps({"dependencies": [
+        {"name": "demo", "version": "1.0",
+         "vulns": [{"id": "CVE-2024-0001", "description": "d",
+                    "fix_versions": ["1.1"]}]}]})
+    _r = DS.scan(Path(_td), runner=_fake)
+    if _r["tools"]:
+        check("注入结果转成问题", _r["issues"][0].rule_id == "DEP-CVE-2024-0001"
+              and "1.1" in _r["issues"][0].fix)
+    else:
+        check("工具缺失如实标注", "未安装" in _r["note"])
+
 print(f"\n全部通过：{PASS} 项 ✓")

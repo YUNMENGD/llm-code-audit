@@ -110,6 +110,8 @@
     <button data-p="history">历史</button>
     <button data-p="kb">知识库</button>
     <button data-p="rules">规则库</button>
+    <button data-p="options">选项</button>
+    <button data-p="flywheel">飞轮</button>
     <button data-p="settings">设置</button>
     <button data-p="mcp">MCP</button>
   </nav>
@@ -147,6 +149,14 @@
       <label class="ckrow"><input type="checkbox" id="incr"> 增量审计——只扫 git 相对 HEAD 的变更文件</label>
       <label class="ckrow"><input type="checkbox" id="cross"> 双模型交叉复核（需设置第二模型）</label>
       <label class="ckrow"><input type="checkbox" id="fewshot" checked> few-shot 校准示例</label>
+      <label>预设 / 严重度阈值（也可在「选项」页设默认值）</label>
+      <div class="segs" id="presets">
+        <button data-v="full" class="sel">全量</button>
+        <button data-v="security">安全专项</button>
+        <button data-v="quality">代码质量</button>
+      </div>
+      <label class="ckrow"><input type="checkbox" id="a-entropy"> 高熵密钥检测</label>
+      <label class="ckrow"><input type="checkbox" id="a-cache"> 静态扫描缓存</label>
       <button id="run" class="btn">开始审计（Ctrl+Enter）</button>
       <div class="btnrow"><button id="cancel" class="btn ghost sm" style="display:none">取消任务</button></div>
       <div id="status"></div>
@@ -165,6 +175,9 @@
         <button data-v="dl-md" title="下载 Markdown">⬇ MD</button>
         <button data-v="dl-json" title="下载结构化数据">⬇ JSON</button>
         <button data-v="dl-share" title="脱敏分享版：路径只留文件名、凭据掩码、带水印">⬇ 分享版</button>
+        <button data-v="dl-sarif" title="SARIF 2.1.0：GitHub Code Scanning / VS Code 可直接读">⬇ SARIF</button>
+        <button data-v="dl-brief" title="精简版：只给清单+统计">⬇ 精简</button>
+        <button data-v="dl-pdf" title="导出 PDF（A4，可直接打印/投稿）">⬇ PDF</button>
       </div>
       <iframe id="frame" style="display:none"></iframe>
       <div id="md"></div>
@@ -257,6 +270,84 @@
     </div>
     <div class="form-grid" id="set-form"></div>
     <div id="set-result" class="muted" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<!-- ═══════════ 选项页 ═══════════ -->
+<section class="page" id="page-options">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">可选功能与扫描范围</h2>
+      <span class="muted">全部默认关闭/全量，改动只影响你自己的扫描，不动评测基线</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="opt-clear-cache">清空静态缓存</button>
+      <button class="btn sm" id="opt-save">保存选项</button>
+    </div>
+    <div class="form-grid">
+      <div><label>审计预设</label>
+        <select id="opt-preset">
+          <option value="full">全量（默认）</option>
+          <option value="security">安全专项（只跑安全类规则）</option>
+          <option value="quality">代码质量（逻辑/规范/工程）</option>
+        </select></div>
+      <div><label>严重度显示阈值（低于此级别不显示）</label>
+        <select id="opt-sev">
+          <option value="low">low 全部显示（默认）</option>
+          <option value="medium">medium 及以上</option>
+          <option value="high">high 及以上</option>
+          <option value="critical">仅 critical</option>
+        </select></div>
+      <div class="full">
+        <label class="ckrow"><input type="checkbox" id="opt-entropy"> 高熵密钥检测（香农熵抓正则漏掉的凭据；启发式，置信度 0.6）</label>
+        <label class="ckrow"><input type="checkbox" id="opt-cache"> 静态扫描缓存（内容哈希+规则指纹；改规则自动失效）</label>
+        <label class="ckrow"><input type="checkbox" id="opt-ignore"> 尊重 .auditignore 排除清单</label>
+        <label class="ckrow"><input type="checkbox" id="opt-notify"> 审计完成后弹系统通知</label>
+      </div>
+      <div class="full"><label>完成通知 webhook（留空=不外发；只发问题数摘要，绝不发源码）</label>
+        <input type="text" id="opt-webhook" placeholder="https://…（可选）"></div>
+      <div class="full"><label>忽略清单 .auditignore（写在下方目标目录里，每行一个 glob）</label>
+        <input type="text" id="opt-root" placeholder="目标项目目录（用于读写 .auditignore）" style="margin-bottom:6px">
+        <textarea id="opt-ignore-text" placeholder="*/vendor/*&#10;*/tests/*&#10;*_pb2.py"></textarea>
+        <div class="btnrow"><button class="btn ghost sm" id="opt-load-ignore">读取该目录清单</button>
+        <button class="btn ghost sm" id="opt-save-ignore">写入该目录清单</button></div></div>
+    </div>
+    <h2 style="margin-top:18px">规则级开关 <span class="muted" id="opt-rule-count"></span></h2>
+    <p class="muted" style="margin-bottom:8px">取消勾选即停用该规则（只影响你的扫描；内置规则文件本身不被修改）。</p>
+    <div id="opt-rules" class="card-list"></div>
+    <h2 style="margin-top:18px">工具集成</h2>
+    <div class="btnrow">
+      <button class="btn ghost sm" id="opt-hook-render">生成 pre-commit 钩子</button>
+      <button class="btn ghost sm" id="opt-depscan">依赖漏洞扫描</button>
+      <button class="btn ghost sm" id="opt-notify-test">测试通知</button>
+      <button class="btn ghost sm" id="opt-pack-export">导出规则/知识包</button>
+      <button class="btn ghost sm" id="opt-pack-import">导入包（先校验）</button>
+    </div>
+    <pre class="code" id="opt-out" style="margin-top:10px;max-height:36vh;overflow:auto;display:none"></pre>
+    <input type="file" id="opt-pack-file" accept=".json" style="display:none">
+  </div>
+</section>
+
+<!-- ═══════════ 飞轮页（误报评审 + 人工标注） ═══════════ -->
+<section class="page" id="page-flywheel">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 style="margin:0">误报反馈评审</h2>
+      <span class="muted" id="fw-stats"></span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="fw-apply-dry">过闸门预演</button>
+      <button class="btn sm" id="fw-apply">写入知识库</button>
+    </div>
+    <p class="muted" style="margin-bottom:10px">报告里点「标记误报」进入队列 → 这里逐条采纳/驳回 → 采纳项转成「误报边界」知识提案；写入前必须过六库零误杀回归，任何真缺陷被误杀即拒绝。</p>
+    <div id="fw-list"></div>
+    <pre class="code" id="fw-out" style="margin-top:10px;max-height:30vh;overflow:auto;display:none"></pre>
+    <h2 style="margin-top:18px">人工标注工具（扩基准用）</h2>
+    <div class="toolbar">
+      <select id="fw-hist" style="max-width:340px"></select>
+      <button class="btn ghost sm" id="fw-load">摊开该次审计逐条标注</button>
+      <input type="text" id="fw-name" placeholder="标注集名称（如 mybench1）" style="max-width:200px">
+      <button class="btn sm" id="fw-save" disabled>保存标注</button>
+    </div>
+    <div id="fw-annot"></div>
   </div>
 </section>
 
@@ -356,7 +447,9 @@ applyTheme(localStorage.getItem("ca-theme") || "light");
 $("#theme-btn").onclick = () => applyTheme(document.body.classList.contains("dark") ? "light" : "dark");
 
 /* ---------- 页签 ---------- */
-const pageLoad = {history: loadHistory, kb: loadKB, rules: loadRules, settings: loadSettings, mcp: loadMCP};
+const pageLoad = {history: loadHistory, kb: loadKB, rules: loadRules, settings: loadSettings,
+                  mcp: loadMCP, options: loadOptions, flywheel: loadFlywheel};
+let preset = "full";
 $("#nav").querySelectorAll("button").forEach(b => b.onclick = () => {
   $("#nav").querySelectorAll("button").forEach(x => x.classList.toggle("sel", x === b));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("on", p.id === "page-" + b.dataset.p));
@@ -371,6 +464,7 @@ function seg(el, cb) {
 }
 seg($("#modes"), v => mode = v);
 seg($("#depths"), v => depth = v);
+seg($("#presets"), v => preset = v);
 
 /* ---------- 环境自检 ---------- */
 function refreshEnv() {
@@ -415,7 +509,8 @@ async function startAudit() {
   try {
     const j = await post("/api/audit", {target, mode, depth,
       incremental: $("#incr").checked, cross_review: $("#cross").checked,
-      examples: $("#fewshot").checked});
+      examples: $("#fewshot").checked, preset,
+      entropy: $("#a-entropy").checked, static_cache: $("#a-cache").checked});
     curJob = j.job_id; poll(j.job_id);
   } catch (e) { fail(e.message); }
 }
@@ -508,6 +603,9 @@ $("#tabs").addEventListener("click", e => {
     if (v === "dl-md") download(`审计报告-${stamp()}.md`, lastResult.markdown, "text/markdown;charset=utf-8");
     if (v === "dl-json") download(`审计报告-${stamp()}.json`, lastResult.json, "application/json;charset=utf-8");
     if (v === "dl-share") shareDownload({job_id: curJob || "", hist_id: lastResult.hist_id || ""});
+    if (v === "dl-sarif") exportSarif({job_id: curJob || "", hist_id: lastResult.hist_id || ""});
+    if (v === "dl-brief") exportBrief({job_id: curJob || "", hist_id: lastResult.hist_id || ""});
+    if (v === "dl-pdf") exportPdf({job_id: curJob || "", hist_id: lastResult.hist_id || ""});
   } else toast("还没有可导出的结果", "err");
 });
 
@@ -773,6 +871,233 @@ $("#mcp-test").onclick = async () => {
       ? `<span style="color:var(--ok)">✔ 握手成功 · ${esc(r.server.name || "")} v${esc(r.server.version || "")} · ${r.tools.length} 个工具就绪：${r.tools.map(esc).join(" / ")}</span>`
       : `<span style="color:var(--err)">✘ 自检失败：${esc(r.error || "工具调用异常")}</span>`;
   } catch (e) { $("#mcp-result").innerHTML = `<span style="color:var(--err)">✘ ${esc(e.message)}</span>`; }
+};
+
+/* ---------- 导出：SARIF / 精简 / PDF ---------- */
+async function exportSarif(ref) {
+  try {
+    const d = await post("/api/export/sarif", ref);
+    download(`审计报告-${stamp()}.sarif`, JSON.stringify(d.sarif, null, 1), "application/json;charset=utf-8");
+    toast("SARIF 已下载，可直接上传 GitHub Code Scanning", "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+async function exportBrief(ref) {
+  try {
+    const d = await post("/api/export/brief", ref);
+    download(`审计报告-精简-${stamp()}.md`, d.markdown, "text/markdown;charset=utf-8");
+    toast("精简版已下载", "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+async function exportPdf(ref) {
+  toast("正在生成 PDF…");
+  try {
+    const d = await post("/api/export/pdf", ref);
+    if (d.ok) {
+      const a = document.createElement("a");
+      a.href = d.download_url; a.download = ""; a.click();
+      toast(`PDF 已生成（${d.pages} 页）`, "ok");
+    } else toast(d.note || "PDF 生成失败", "err");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+/* ---------- 选项页 ---------- */
+let optRules = [];
+function optOut(text) {
+  const el = $("#opt-out");
+  el.style.display = "block"; el.textContent = text;
+}
+async function loadOptions() {
+  try {
+    const root = $("#opt-root").value.trim();
+    const d = await api("/api/options" + (root ? "?root=" + encodeURIComponent(root) : ""));
+    const o = d.options;
+    $("#opt-preset").value = o.preset; $("#opt-sev").value = o.min_severity;
+    $("#opt-entropy").checked = !!o.entropy; $("#opt-cache").checked = !!o.static_cache;
+    $("#opt-ignore").checked = !!o.use_ignore; $("#opt-notify").checked = !!o.notify;
+    $("#opt-webhook").value = o.webhook || "";
+    if (root) $("#opt-ignore-text").value = d.ignore_text || "";
+    optRules = d.rules;
+    $("#opt-rule-count").textContent = `（${d.rules.filter(r => r.enabled).length}/${d.rules.length} 启用）`;
+    $("#opt-rules").innerHTML = d.rules.map(r => `
+      <div class="kcard" style="padding:8px 10px">
+        <label class="ckrow" style="margin:0">
+          <input type="checkbox" class="opt-rck" data-id="${esc(r.id)}" ${r.enabled ? "checked" : ""}>
+          <b>${esc(r.id)}</b> <span class="tag ${esc(r.severity)}">${esc(r.severity)}</span>
+        </label>
+        <p style="margin:2px 0 0">${esc(r.title)}</p>
+      </div>`).join("");
+    $("#opt-rules").querySelectorAll(".opt-rck").forEach(c => c.onchange = async () => {
+      try {
+        await post("/api/options/rule", {id: c.dataset.id, enabled: c.checked});
+        toast(`${c.dataset.id} 已${c.checked ? "启用" : "停用"}`, "ok");
+        refreshEnv();
+      } catch (e) { toast(e.message, "err"); c.checked = !c.checked; }
+    });
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#opt-save").onclick = async () => {
+  try {
+    await post("/api/options", {updates: {
+      preset: $("#opt-preset").value, min_severity: $("#opt-sev").value,
+      entropy: $("#opt-entropy").checked, static_cache: $("#opt-cache").checked,
+      use_ignore: $("#opt-ignore").checked, notify: $("#opt-notify").checked,
+      webhook: $("#opt-webhook").value.trim()}});
+    toast("选项已保存", "ok"); loadOptions(); refreshEnv();
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#opt-clear-cache").onclick = async () => {
+  try { await post("/api/options/clear-cache", {}); toast("静态缓存已清空", "ok"); }
+  catch (e) { toast(e.message, "err"); }
+};
+$("#opt-load-ignore").onclick = loadOptions;
+$("#opt-save-ignore").onclick = async () => {
+  const root = $("#opt-root").value.trim();
+  if (!root) { toast("请先填目标项目目录", "err"); return; }
+  try {
+    await post("/api/options", {updates: {}, root, ignore_text: $("#opt-ignore-text").value});
+    toast("忽略清单已写入该目录", "ok");
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#opt-hook-render").onclick = async () => {
+  const repo = $("#opt-root").value.trim() || $("#target").value.trim();
+  if (!repo) { toast("请先填仓库目录", "err"); return; }
+  try {
+    const r = await post("/api/hook", {repo, action: "render", threshold: "high"});
+    optOut("# 把下面内容存为 .git/hooks/pre-commit（或点下方安装）\n" + r.script);
+    if (confirm("直接安装到该仓库的 .git/hooks/pre-commit？（已存在则不覆盖）")) {
+      const i = await post("/api/hook", {repo, action: "install", threshold: "high"});
+      toast("钩子已安装：" + i.path, "ok");
+    }
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#opt-depscan").onclick = async () => {
+  const t = $("#opt-root").value.trim() || $("#target").value.trim();
+  if (!t) { toast("请先填目标目录", "err"); return; }
+  optOut("依赖扫描中…");
+  try {
+    const r = await post("/api/depscan", {target: t});
+    optOut(`工具：${r.tools.join(", ") || "无"}\n${r.note || ""}\n\n` +
+      (r.issues.length ? r.issues.map(i => `[${i.severity}] ${i.title}\n  修复：${i.fix}`).join("\n")
+                       : "未发现已知漏洞（或工具不可用）"));
+  } catch (e) { optOut("✘ " + e.message); }
+};
+$("#opt-notify-test").onclick = async () => {
+  try {
+    const r = await post("/api/notify/test", {});
+    optOut("通知测试结果：\n" + JSON.stringify(r, null, 1));
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#opt-pack-export").onclick = async () => {
+  try {
+    const d = await api("/api/pack/export");
+    download(`codeaudit-规则知识包-${stamp()}.json`, JSON.stringify(d.pack, null, 1), "application/json;charset=utf-8");
+    toast(`已导出 ${d.pack.rules.length} 条规则 / ${d.pack.items.length} 条知识`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#opt-pack-import").onclick = () => $("#opt-pack-file").click();
+$("#opt-pack-file").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const pack = JSON.parse(await f.text());
+    const dry = await post("/api/pack/import", {pack, dry_run: true});
+    optOut(`校验通过：可导入 ${dry.skipped_count} 条（预演未写入）\n` +
+      dry.skipped.map(s => `  ${s.kind} ${s.id}`).join("\n"));
+    if (confirm(`确认导入 ${dry.skipped_count} 条自定义条目？（内置条目不会被覆盖）`)) {
+      const r = await post("/api/pack/import", {pack});
+      toast(`导入 ${r.added_count} 条，跳过 ${r.skipped_count} 条`, "ok");
+      optOut(JSON.stringify(r, null, 1)); loadOptions(); refreshEnv();
+    }
+  } catch (err) { toast(err.message, "err"); }
+  e.target.value = "";
+};
+
+/* ---------- 飞轮页：评审 + 标注 ---------- */
+async function loadFlywheel() {
+  try {
+    const d = await api("/api/review");
+    const s = d.stats;
+    $("#fw-stats").textContent = `共 ${s.total} 条 · 待评审 ${s.pending} · 采纳 ${s.adopt} · 驳回 ${s.reject}`;
+    $("#fw-list").innerHTML = d.items.length ? d.items.map(r => `
+      <div class="kcard" style="margin-bottom:8px">
+        <h3>${esc(r.rule)} · ${esc(r.title)} <span class="tag">×${r.count || 1}</span>
+          <span class="tag ${r.decision === "adopt" ? "ok" : ""}">${esc(r.decision)}</span></h3>
+        <p>${esc(r.path || "")}${r.line ? ":" + r.line : ""}</p>
+        <pre class="code" style="max-height:80px">${esc(r.evidence || "")}</pre>
+        <div class="btnrow">
+          <button class="btn ghost sm" data-k="${esc(r.key)}" data-d="adopt">采纳为误报</button>
+          <button class="btn ghost sm" data-k="${esc(r.key)}" data-d="reject">驳回（确属真缺陷）</button>
+          <button class="btn ghost sm" data-k="${esc(r.key)}" data-d="pending">重置</button>
+        </div>
+      </div>`).join("") : '<p class="muted">队列空：在审计报告里点「标记误报」即可入队。</p>';
+    $("#fw-list").querySelectorAll("button[data-k]").forEach(b => b.onclick = async () => {
+      try {
+        await post("/api/review/decision", {key: b.dataset.k, decision: b.dataset.d,
+                                           note: "界面评审"});
+        toast("已更新", "ok"); loadFlywheel();
+      } catch (e) { toast(e.message, "err"); }
+    });
+    const h = await api("/api/history");
+    $("#fw-hist").innerHTML = h.items.map(i =>
+      `<option value="${esc(i.id)}">${esc(i.time_str)} · ${esc(i.target)} (${i.total})</option>`).join("");
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#fw-apply-dry").onclick = async () => {
+  try {
+    const r = await post("/api/review/apply", {});
+    $("#fw-out").style.display = "block";
+    $("#fw-out").textContent = JSON.stringify(r, null, 1);
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#fw-apply").onclick = async () => {
+  if (!confirm("把已采纳的误报边界写入知识库？会先跑六库零误杀回归，不通过则拒绝。")) return;
+  try {
+    const r = await post("/api/review/apply", {write: true});
+    $("#fw-out").style.display = "block";
+    $("#fw-out").textContent = JSON.stringify(r, null, 1);
+    toast(r.ok ? `已写入 ${(r.written || []).length} 条` : (r.blocked || r.note || "未写入"),
+          r.ok ? "ok" : "err");
+    refreshEnv();
+  } catch (e) { toast(e.message, "err"); }
+};
+let fwItems = [];
+$("#fw-load").onclick = async () => {
+  const id = $("#fw-hist").value;
+  if (!id) { toast("暂无历史可标注", "err"); return; }
+  try {
+    const d = await post("/api/annotate/items", {hist_id: id});
+    fwItems = d.items;
+    $("#fw-save").disabled = !fwItems.length;
+    $("#fw-annot").innerHTML = fwItems.length ? fwItems.map(it => `
+      <div class="kcard" style="margin-bottom:8px">
+        <h3>#${it.idx} ${esc(it.rule)} · ${esc(it.title)} <span class="tag ${esc(it.severity)}">${esc(it.severity)}</span></h3>
+        <p>${esc(it.path)}:${it.line}</p>
+        <pre class="code" style="max-height:150px">${esc(it.context)}</pre>
+        <div class="segs" data-idx="${it.idx}">
+          <button data-v="T">T 真缺陷</button><button data-v="F">F 误报</button>
+          <button data-v="?" class="sel">? 存疑</button>
+        </div>
+      </div>`).join("") : '<p class="muted">该次审计无问题可标注。</p>';
+    $("#fw-annot").querySelectorAll(".segs").forEach(g => {
+      g.querySelectorAll("button").forEach(b => b.onclick = () => {
+        g.querySelectorAll("button").forEach(x => x.classList.remove("sel"));
+        b.classList.add("sel");
+        const it = fwItems.find(x => String(x.idx) === g.dataset.idx);
+        if (it) it.verdict = b.dataset.v;
+      });
+    });
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#fw-save").onclick = async () => {
+  const name = $("#fw-name").value.trim();
+  if (!name) { toast("请填标注集名称", "err"); return; }
+  const verdicts = {};
+  fwItems.forEach(it => verdicts[String(it.idx)] = it.verdict || "?");
+  try {
+    const r = await post("/api/annotate/save", {name, items: fwItems, verdicts});
+    toast(`已保存：T${r.T}/F${r.F}/?${r["?"]} precision=${r.precision}`, "ok");
+    $("#fw-out").style.display = "block";
+    $("#fw-out").textContent = JSON.stringify(r, null, 1);
+  } catch (e) { toast(e.message, "err"); }
 };
 </script>
 </body>

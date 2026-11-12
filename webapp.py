@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import sys
 import threading
 import time
 import uuid
@@ -42,6 +43,7 @@ from codeaudit.paths import WEB_DIR
 from codeaudit.retriever import load_knowledge
 
 BASE = WEB_DIR
+ROOT_OUT = WEB_DIR.parent / "out"          # 导出产物目录（PDF 等，供下载端点取用）
 app = FastAPI(title="LLM Code Audit", docs_url=None, redoc_url=None)
 
 _jobs: dict[str, dict] = {}
@@ -80,6 +82,11 @@ class AuditReq(BaseModel):
     examples: bool = True
     incremental: bool = False    # 仅审 git 相对 HEAD 的变更 .py（含未跟踪）
     cross_review: bool = False   # 双模型交叉复核（需配置第二模型）
+    preset: str = "full"         # full | security | quality
+    min_severity: str = "low"    # 只显示 ≥该严重度
+    entropy: bool = False        # 高熵密钥检测（可选）
+    static_cache: bool = False   # 静态扫描缓存（可选）
+    use_ignore: bool = True      # 尊重 .auditignore
 
 
 class CancelledError(RuntimeError):
@@ -106,20 +113,23 @@ def _dispatch(req: AuditReq, job: dict | None = None):
         if not only:
             print("[incremental] 相对 HEAD 没有 .py 变更，本次无需扫描")
     if req.mode == "static":
+        from codeaudit import entropy as EN
         from codeaudit import jsrules as JR
+        from codeaudit import options as OP
+        from codeaudit import scancache as SC
         from codeaudit.models import AuditReport
         target = Path(req.target)
-        rs = RL.load_rules()
-        js_rs = JR.load_js_rules()
+        rs = OP.filter_rules(RL.load_rules(), preset=req.preset)
+        js_rs = OP.filter_rules(JR.load_js_rules(), preset=req.preset)
         rep = AuditReport(target=str(target))
-        files = [target] if target.is_file() else sorted(
-            p for p in target.rglob("*")
-            if p.is_file() and p.suffix in ({".py"} | JR.JS_EXTS)
-            and not any(x in p.parts for x in (".git", "__pycache__", ".venv", "venv",
-                                               "node_modules")))
+        files = ([target] if target.is_file()
+                 else OP.collect_files(target, {".py"} | JR.JS_EXTS,
+                                       use_ignore=req.use_ignore))
         if only is not None:
             files = [p for p in files if str(p.resolve()) in only]
-        skipped = 0
+        use_cache = SC.enabled(req.static_cache)
+        fp = SC.fingerprint(rs + js_rs)
+        skipped, cache_hit = 0, 0
         for i, f in enumerate(files, 1):
             if job is not None and job.get("cancel"):
                 raise CancelledError("用户取消")
@@ -129,12 +139,26 @@ def _dispatch(req: AuditReq, job: dict | None = None):
                 skipped += 1
                 print(f"[{i}/{len(files)}] 跳过不可读文件 {f.name}：{e}")
                 continue
-            if f.suffix in JR.JS_EXTS:
-                rep.issues.extend(JR.scan_js_source(src, js_rs, str(f)))
+            rows = SC.get(f, fp) if use_cache else None
+            if rows is not None:
+                cache_hit += 1
             else:
-                rep.issues.extend(RL.scan_source(src, rs, str(f)))
+                found = (JR.scan_js_source(src, js_rs, str(f))
+                         if f.suffix in JR.JS_EXTS
+                         else RL.scan_source(src, rs, str(f)))
+                if req.entropy:
+                    found += EN.scan_source(src, str(f))
+                rows = [x.to_dict() for x in found]
+                if use_cache:
+                    SC.put(f, fp, rows)
+            rep.issues.extend(SC.rows_to_issues(rows))
             print(f"[{i}/{len(files)}] 扫描 {f.name}")
-        rep.engine = {"model": "static-rules", "llm_used": False, "depth": req.depth}
+        if use_cache:
+            SC.flush()
+            print(f"[cache] 静态缓存命中 {cache_hit}/{len(files)} 个文件")
+        rep.engine = {"model": "static-rules", "llm_used": False, "depth": req.depth,
+                      "preset": req.preset, "entropy": bool(req.entropy),
+                      "static_cache": use_cache}
         if skipped:
             rep.engine["skipped"] = skipped
         if only is not None:
@@ -144,11 +168,13 @@ def _dispatch(req: AuditReq, job: dict | None = None):
                      "by_category": rep.count_by("category"),
                      "by_detector": rep.count_by("detector"),
                      "elapsed_sec": 0}
-        return rep
+        return OP.filter_report(rep, req.min_severity)
     return audit_path(req.target, depth=req.depth,
                       use_examples=req.examples or None,
                       cross_review=req.cross_review or None,
-                      only_files=only)
+                      only_files=only, preset=req.preset,
+                      min_severity=req.min_severity,
+                      entropy=req.entropy or None)
 
 
 def _run_job(job_id: str, req: AuditReq) -> None:
@@ -565,3 +591,219 @@ def mcp_config() -> dict:
 @app.post("/api/mcp/selftest")
 def mcp_selftest() -> dict:
     return MC.selftest()
+
+
+# ---------- 可选功能：选项 / 规则开关 / 忽略清单 ----------
+
+@app.get("/api/options")
+def options_get(root: str = "") -> dict:
+    from codeaudit import options as OP
+    o = OP.load_options()
+    rules = [{"id": r["id"], "title": r.get("title", ""),
+              "category": r.get("category", ""), "severity": r.get("severity", ""),
+              "builtin": r.get("_builtin", True),
+              "enabled": r["id"] not in o["disabled_rules"]}
+             for r in KA.list_rules()]
+    return {"options": o, "presets": OP.PRESETS, "rules": rules,
+            "severities": OP.SEV_ORDER,
+            "ignore_text": OP.read_ignore_text(root) if root else "",
+            "ignore_name": OP.IGNORE_NAME}
+
+
+@app.post("/api/options")
+def options_save(payload: dict) -> dict:
+    from codeaudit import options as OP
+    try:
+        o = OP.save_options(payload.get("updates") or {})
+        if payload.get("ignore_text") is not None and payload.get("root"):
+            OP.write_ignore_text(payload["root"], payload["ignore_text"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except OSError as e:
+        raise HTTPException(400, f"忽略清单写入失败：{e}")
+    return {"ok": True, "options": o}
+
+
+@app.post("/api/options/rule")
+def options_rule(payload: dict) -> dict:
+    from codeaudit import options as OP
+    rid = str(payload.get("id", ""))
+    if not rid:
+        raise HTTPException(400, "缺少规则 ID")
+    return {"ok": True, "options": OP.set_rule_switch(rid, bool(payload.get("enabled")))}
+
+
+@app.post("/api/options/clear-cache")
+def options_clear_cache() -> dict:
+    from codeaudit import scancache as SC
+    return SC.clear()
+
+
+# ---------- SARIF / PDF / 精简版导出 ----------
+
+class ExportReq(BaseModel):
+    hist_id: str = ""
+    job_id: str = ""
+    brief: bool = False
+
+
+def _rep_from_ref(hist_id: str, job_id: str):
+    if hist_id:
+        try:
+            return HS.load_report(hist_id)
+        except FileNotFoundError:
+            raise HTTPException(404, "历史记录不存在")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    job = _jobs.get(job_id)
+    if job is None or job["status"] != "done":
+        raise HTTPException(409, "任务不存在或未完成")
+    return job["report"]
+
+
+@app.post("/api/export/sarif")
+def export_sarif(req: ExportReq) -> dict:
+    from codeaudit import sarif as SF
+    rep = _rep_from_ref(req.hist_id, req.job_id)
+    return {"sarif": SF.to_sarif(rep, root=Path(rep.target))}
+
+
+@app.post("/api/export/brief")
+def export_brief(req: ExportReq) -> dict:
+    from codeaudit import pdfout as PD
+    rep = _rep_from_ref(req.hist_id, req.job_id)
+    return {"markdown": PD.render_brief_markdown(rep),
+            "html": PD.render_print_html(rep, brief=True)}
+
+
+@app.post("/api/export/pdf")
+def export_pdf(req: ExportReq) -> dict:
+    from codeaudit import pdfout as PD
+    rep = _rep_from_ref(req.hist_id, req.job_id)
+    out = ROOT_OUT / f"审计报告-{time.strftime('%Y%m%d-%H%M%S')}.pdf"
+    r = PD.to_pdf(rep, out, brief=req.brief)
+    if r.get("ok"):
+        r["download_url"] = "/api/download?name=" + out.name
+    return r
+
+
+@app.get("/api/download")
+def download_file(name: str):
+    from fastapi.responses import FileResponse
+    safe = Path(name).name
+    p = ROOT_OUT / safe
+    if not p.exists() or p.parent != ROOT_OUT:
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(str(p), filename=safe)
+
+
+# ---------- 误报评审 + 人工标注 ----------
+
+@app.get("/api/review")
+def review_list() -> dict:
+    from codeaudit import review as RV
+    return {"items": RV.rows(), "stats": RV.stats()}
+
+
+@app.post("/api/review/decision")
+def review_decision(payload: dict) -> dict:
+    from codeaudit import review as RV
+    try:
+        return RV.set_decision(str(payload.get("key", "")),
+                               str(payload.get("decision", "")),
+                               str(payload.get("note", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/review/apply")
+def review_apply(payload: dict) -> dict:
+    from codeaudit import review as RV
+    return RV.apply_adopted(dry_run=not bool(payload.get("write")))
+
+
+@app.post("/api/annotate/items")
+def annotate_items(req: ExportReq) -> dict:
+    from codeaudit import review as RV
+    rep = _rep_from_ref(req.hist_id, req.job_id)
+    return {"items": RV.annotate_items(rep)}
+
+
+@app.post("/api/annotate/save")
+def annotate_save(payload: dict) -> dict:
+    from codeaudit import review as RV
+    try:
+        return RV.save_annotations(str(payload.get("name", "annot")),
+                                   payload.get("items") or [],
+                                   payload.get("verdicts") or {})
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/annotate/list")
+def annotate_list() -> dict:
+    from codeaudit import review as RV
+    return {"items": RV.list_annotations()}
+
+
+# ---------- 规则/知识包 ----------
+
+@app.get("/api/pack/export")
+def pack_export() -> dict:
+    from codeaudit import packs as PK
+    return {"pack": PK.export_pack()}
+
+
+@app.post("/api/pack/import")
+def pack_import(payload: dict) -> dict:
+    from codeaudit import packs as PK
+    try:
+        return PK.import_pack(payload.get("pack") or {},
+                              dry_run=bool(payload.get("dry_run")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------- 依赖扫描 / 钩子 / 通知 ----------
+
+@app.post("/api/depscan")
+def depscan_run(payload: dict) -> dict:
+    from codeaudit import depscan as DS
+    target = str(payload.get("target", "")).strip()
+    if not target or not Path(target).exists():
+        raise HTTPException(400, "目标路径不存在")
+    r = DS.scan(target)
+    return {"ok": r["ok"], "tools": r["tools"], "note": r["note"],
+            "manifests": r.get("manifests", []),
+            "issues": [i.to_dict() for i in r["issues"]]}
+
+
+@app.post("/api/hook")
+def hook_manage(payload: dict) -> dict:
+    from codeaudit import hooks as HK
+    repo = str(payload.get("repo", "")).strip()
+    if not repo or not Path(repo).exists():
+        raise HTTPException(400, "仓库路径不存在")
+    action = payload.get("action", "render")
+    thr = str(payload.get("threshold", "high"))
+    if action == "install":
+        r = HK.install(repo, threshold=thr, python=sys.executable,
+                       force=bool(payload.get("force")))
+    elif action == "uninstall":
+        r = HK.uninstall(repo)
+    else:
+        r = {"ok": True, "script": HK.render(thr, sys.executable)}
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("note", "操作失败"))
+    return r
+
+
+@app.post("/api/notify/test")
+def notify_test() -> dict:
+    from codeaudit import notify as NT
+    from codeaudit import options as OP
+    o = OP.load_options()
+    return NT.notify_done({"target_name": "连通性测试", "total": 0,
+                           "by_severity": {}, "mode": "test",
+                           "elapsed_sec": 0},
+                          {"notify": True, "webhook": o.get("webhook", "")})

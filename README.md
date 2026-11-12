@@ -115,17 +115,46 @@ python -m codeaudit diff out/old.json out/new.json
 # ②f 大目录并行静态扫描（≥64 文件自动启用；--workers 1 强制串行）
 python -m codeaudit check big_project/ --workers 8
 
-# ③ 桌面应用（独立窗口：审计/历史/知识库/规则库/设置/MCP 六页签，深浅主题）
+# ③ 桌面应用（独立窗口：审计/历史/知识库/规则库/选项/飞轮/设置/MCP 八页签，深浅主题）
 python desktop.py
 
 # ③b MCP 服务器：把审计能力开放给 Claude Desktop / Cursor 等客户端
 python -m codeaudit mcp        # 绿色版：CodeAudit.exe --mcp
 # 7 工具 + 知识库只读资源 + 审计话术模板；配置在桌面端「MCP」页一键复制
 
-# ④ 测试：274 项离线单测 + 六库回归红线
+# ⑤ 可选功能（全部默认关闭/全量，不影响评测基线）
+python -m codeaudit check . --preset security --min-severity high   # 安全专项+只留高危
+python -m codeaudit check . --entropy --static-cache               # 高熵密钥+扫描缓存
+python -m codeaudit audit . --sarif out/r.sarif --pdf out/r.pdf --brief
+python -m codeaudit hook --install          # 提交前增量门禁（SKIP_CODEAUDIT=1 可跳过）
+python -m codeaudit pack export team.json   # 团队共享自定义规则/知识（带校验和）
+python -m codeaudit review list             # 误报评审：adopt/reject/apply（过零误杀闸门）
+python -m codeaudit depscan .               # 依赖 CVE（需本机 pip-audit / npm）
+python -m codeaudit export out/report.json --sarif out/r.sarif
+
+# ④ 测试：317 项离线单测 + 六库回归红线
 python tests/test_offline.py
 python -m pytest
 ```
+
+### 可选功能一览（v7）
+
+| 功能 | 开关方式 | 默认 |
+| --- | --- | --- |
+| 扫描范围 `.auditignore` | 目标目录放清单 / `--no-ignore` | 温和排除 vendor 等 |
+| 审计预设（安全专项/代码质量/全量） | `--preset` / 选项页 | 全量 |
+| 规则级开关 | 选项页逐条勾选 | 全部启用 |
+| 严重度显示阈值 | `--min-severity` / 选项页 | low（全显示） |
+| 静态扫描缓存 | `--static-cache` / 选项页 | 关（改规则自动失效） |
+| 高熵密钥检测 | `--entropy` / 选项页 | 关（置信度 0.6 区分启发式） |
+| SARIF 2.1.0 导出 | `--sarif` / 报告页按钮 | 按需（CI 模板见 examples/codeaudit-sarif.yml） |
+| PDF / 精简版报告 | `--pdf` / `--brief` | 按需 |
+| Git pre-commit 门禁 | `hook --install`（显式） | 未安装 |
+| 完成通知 / webhook | 选项页（webhook 只发统计摘要） | 关 |
+| 误报评审 + 人工标注 | 飞轮页 / `review` 命令 | 采纳后须过零误杀闸门才写库 |
+| 规则/知识包共享 | `pack export/import`（带校验和） | 按需 |
+| 依赖 CVE 扫描 | `depscan` / 选项页 | 按需（工具缺失如实报） |
+| 多模型投票（2~3 家） | `AUDIT_VOTE_MODELS=3` + `LLM3_*` | 单模型 |
 
 ### 桌面端功能一览
 
@@ -135,6 +164,8 @@ python -m pytest
 | 历史 | 完成任务自动存档（保留最近 50 次），回看交互报告、删除、导出 HTML/MD/JSON/**脱敏分享版**、勾选两份报告 **diff 对比**（新增/消除/移动/存续）、**趋势图**（问题数/严重度随时间变化） |
 | 知识库 | 条目搜索/新增/编辑/删除（自定义写 `knowledge/defects/custom.json`，内置只读保护评测口径）、一键重建向量索引 |
 | 规则库 | 硬规则查看 + 自定义正则规则（保存前强制编译校验 + 样例试跑预览），写入即进静态引擎 |
+| 选项 | 预设/严重度阈值/规则级开关/`.auditignore` 编辑/高熵检测/扫描缓存/通知与 webhook/钩子生成/依赖扫描/规则知识包导入导出 |
+| 飞轮 | 误报反馈逐条采纳驳回 → 转「误报边界」知识提案 → **过六库零误杀闸门**才写库；内置人工标注工具（T/F/? 带源码上下文，产出 bench-real 兼容标注） |
 | 设置 | 模型/密钥/端点/温度等在线编辑（密钥脱敏回显、留空不改、只落本地 `.env`）、一键连通性测试 |
 | MCP | 7 个标准工具（audit_code 含 JS/TS、list_rules、search_knowledge、list_knowledge、mark_false_positive、audit_history、diff_audits）+ 知识库只读资源 + 审计话术模板，配置一键复制 + 子进程握手自检 |
 
@@ -164,10 +195,11 @@ llm-code-audit/
 ├── prompts/          # Python 三级 + JS 文件级审计模板
 ├── bench-real/       # 6 库人工核验 ground truth（pytest 回归数据源）
 ├── bench-taint/      # 污点候选路径人工核验标注
-├── web/              # 桌面端前端（六页签单页应用）
+├── bench-annot/      # 内置标注工具产出的人工核验集
+├── web/              # 桌面端前端（八页签单页应用）
 ├── tools/            # 打包、消融/性能/污点实验、评审门禁、反馈聚合
 ├── desktop.py        # 桌面应用入口（pywebview 窗口 + 本地 FastAPI + --mcp）
-├── tests/            # 274 项离线单测 + bench-real 回归红线
+├── tests/            # 317 项离线单测 + bench-real 回归红线
 ├── examples/         # Python/JS 测试样例 + CI 门禁模板
 ├── docs/             # 需求/设计/决策/实验文档（实验矩阵见上）
 └── out/              # 审计报告与实验产物（不入库）

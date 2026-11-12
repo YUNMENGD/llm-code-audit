@@ -36,10 +36,17 @@ def main() -> None:
     spec = ROOT / "build" / f"{NAME}.spec"
     if OUT.exists():
         shutil.rmtree(OUT)
+    # PDF 导出用的 pymupdf 会被 hook 顺带拖进 scipy/onnxruntime/matplotlib
+    # 等无关重型依赖（实测多占 ~120MB），本工具用不到，显式排除。
+    excludes = []
+    for mod in ("scipy", "onnxruntime", "matplotlib", "pandas", "sympy",
+                "IPython", "jupyter", "notebook", "pytest", "tkinter.test"):
+        excludes += ["--exclude-module", mod]
     run([sys.executable, "-m", "PyInstaller",
          "--noconfirm", "--clean", "--onedir", "--windowed",
          "--name", NAME,
          "--collect-all", "webview",
+         *excludes,
          "desktop.py"])
     if not OUT.exists():
         sys.exit(f"未找到产物目录 {OUT}")
