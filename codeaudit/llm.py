@@ -80,11 +80,15 @@ class LLMClient:
         return out
 
     def _post_embeddings(self, payload: dict) -> list[list[float]]:
+        # 向量端点可独立覆盖：聊天服务商无 embeddings 接口时（如 DeepSeek），
+        # 用 EMBEDDING_BASE_URL / EMBEDDING_API_KEY 单独指定；未设置则沿用主配置。
+        base = os.getenv("EMBEDDING_BASE_URL", "").strip() or self.base_url
+        key = os.getenv("EMBEDDING_API_KEY", "").strip() or self.api_key
         req = urllib.request.Request(
-            self.base_url + "/embeddings",
+            base.rstrip("/") + "/embeddings",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {self.api_key}"},
+                     "Authorization": f"Bearer {key}"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=60) as resp:
