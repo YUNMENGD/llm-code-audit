@@ -15,10 +15,11 @@
     "R-SEC-008": "CWE-78",
     "R-SEC-009": "CWE-330",
     "R-SEC-010": "CWE-489",
-    "R-LOG-001": "CWE-390",
-    "R-LOG-002": "CWE-1112",
-    "R-LOG-003": "CWE-480",
-    "R-ENG-001": "CWE-404",
-    "R-ENG-002": "ENG-DOC"
+    "R-LOG-001": "LOG-002",
+    "R-LOG-002": "LOG-007",
+    "R-LOG-003": "LOG-005",
+    "R-ENG-001": "LOG-004",
+    "R-ENG-002": "STY-006",
+    "R-STYLE-002": "STY-003"
   }
 }

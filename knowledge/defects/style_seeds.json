@@ -71,9 +71,9 @@
       "title": "死代码与注释掉的代码块",
       "category": "style",
       "severity": "low",
-      "tags": ["dead", "unused", "comment"],
-      "triggers": ["# def ", "# if ", "# import", "unused_", "_ = ", "# print"],
-      "pattern": "大段被注释的旧实现留在文件里；定义了从不使用的变量/函数。",
+      "tags": ["dead", "unused", "comment", "todo", "fixme"],
+      "triggers": ["# def ", "# if ", "# import", "unused_", "_ = ", "# print", "TODO", "FIXME", "XXX", "HACK"],
+      "pattern": "大段被注释的旧实现留在文件里；定义了从不使用的变量/函数；TODO/FIXME/XXX 滞留标记未清理。",
       "impact": "误导读者，掩盖真实逻辑；历史应由 git 保管。",
       "fix": "删除注释掉的代码（需要时从 git 找回）；未用定义直接删或说明保留原因。",
       "source": "PEP8 / 通用实践"

@@ -84,6 +84,7 @@ def audit_path(target: str | Path, depth: str = "file",
     # 跨文件调用图（申报书"函数调用链/跨文件依赖"）：纯 AST 零成本，仅 LLM
     # 审计时构建；失败不拉闸审计（graph=None 时 Prompt 上下文自动缺省）。
     call_graph = None
+    taint_tracker = None
     if (do_cross or client.available()) and target.is_dir() \
             and os.getenv("AUDIT_CALLGRAPH", "1") == "1":
         try:
@@ -95,6 +96,19 @@ def audit_path(target: str | Path, depth: str = "file",
                   f"({engine['callgraph']['build_sec']}s)", flush=True)
         except Exception as e:                        # noqa: BLE001
             print(f"[warn] 调用图构建失败，降级为无链上下文: {e}", flush=True)
+        # 污点追踪（数据流证据链）：调用图之上再深一层，失败同样不拉闸
+        if os.getenv("AUDIT_TAINT", "1") == "1":
+            try:
+                from . import taint as TT
+                t0 = time.time()
+                taint_tracker = TT.TaintTracker().build(target, all_files)
+                engine["taint"] = {**taint_tracker.stats(),
+                                   "build_sec": round(time.time() - t0, 2)}
+                print(f"[taint] 污点追踪 {taint_tracker.stats()} "
+                      f"({engine['taint']['build_sec']}s)", flush=True)
+            except Exception as e:                    # noqa: BLE001
+                print(f"[warn] 污点追踪构建失败，降级为无数据流上下文: {e}",
+                      flush=True)
 
     n_files = len(files)
     guards = RL.load_guards()
@@ -128,7 +142,7 @@ def audit_path(target: str | Path, depth: str = "file",
             with ThreadPoolExecutor(max_workers=_concurrency(total_calls)) as pool:
                 futs = {pool.submit(_audit_unit, cu, u, source_lines,
                                     static_rules, knowledge, use_examples,
-                                    use_cache, call_graph): (cu, u)
+                                    use_cache, call_graph, taint_tracker): (cu, u)
                         for cu, u in tasks}
                 for fut in as_completed(futs):
                     cu, u = futs[fut]
@@ -193,6 +207,7 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
                 use_examples: bool = True,
                 use_cache: bool = False,
                 call_graph: "G.CallGraph | None" = None,
+                taint_tracker=None,
                 ) -> tuple[list[Issue], bool | None]:
     """单个工作单元的 LLM 审计：检索知识 → 组 Prompt → (缓存/调用) → 解析 → 校验。
 
@@ -222,6 +237,14 @@ def _audit_unit(client: LLMClient, unit: CodeUnit, source_lines: list[str],
             if txt:
                 chain = ("跨文件调用关系（本文件函数被外部模块调用，近似解析）:\n"
                          + txt)
+
+    # 污点传播证据链（数据流层）：有路径才注入，不改变无污点文件的 prompt
+    if taint_tracker is not None:
+        tt = (taint_tracker.function_text(unit.path, unit.name)
+              if unit.kind == "function"
+              else taint_tracker.file_text(unit.path))
+        if tt:
+            chain = (chain + "\n" + tt) if chain else tt
 
     tpl = load_prompt(f"{unit.kind}_audit.md") or load_prompt("file_audit.md")
     ex_kind = "file" if unit.kind == "project" else unit.kind

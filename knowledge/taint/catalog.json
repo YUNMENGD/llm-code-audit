@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "name": "污点追踪目录：外部输入源（sources）与危险汇聚点（sinks）",
+    "version": "1.0",
+    "note": "match 为点分调用名，匹配口径：全等 / 后缀 .match / 前缀 match.。新增须附 CWE 来源并经评审；本目录只产候选路径提示，裁决在 LLM 层。",
+    "maintainer": "team"
+  },
+  "sources": [
+    {"match": "input", "cwe": "CWE-20", "note": "标准输入"},
+    {"match": "raw_input", "cwe": "CWE-20", "note": "Py2 标准输入"},
+    {"match": "os.getenv", "cwe": "CWE-20", "note": "环境变量可被外部设置"},
+    {"match": "request.args.get", "cwe": "CWE-20", "note": "Flask 查询参数"},
+    {"match": "request.form.get", "cwe": "CWE-20", "note": "Flask 表单"},
+    {"match": "request.get_json", "cwe": "CWE-20", "note": "Flask JSON 体"},
+    {"match": "request.data", "cwe": "CWE-20", "note": "Flask 原始体"},
+    {"match": "request.values.get", "cwe": "CWE-20", "note": "Flask 合并参数"},
+    {"match": "request.cookies.get", "cwe": "CWE-20", "note": "Cookie 可伪造"},
+    {"match": "request.headers.get", "cwe": "CWE-20", "note": "请求头可伪造"},
+    {"match": "sys.argv", "cwe": "CWE-20", "note": "命令行参数"},
+    {"match": "socket.recv", "cwe": "CWE-20", "note": "网络输入"},
+    {"match": "urllib.request.urlopen", "cwe": "CWE-20", "note": "远程响应内容"},
+    {"match": "requests.get", "cwe": "CWE-20", "note": "远程响应内容"},
+    {"match": "requests.post", "cwe": "CWE-20", "note": "远程响应内容"}
+  ],
+  "sinks": [
+    {"match": "os.system", "cwe": "CWE-78", "note": "shell 命令执行"},
+    {"match": "os.popen", "cwe": "CWE-78", "note": "shell 命令执行"},
+    {"match": "subprocess.run", "cwe": "CWE-78", "note": "shell=True 时危险，语义层确认"},
+    {"match": "subprocess.Popen", "cwe": "CWE-78", "note": "shell=True 时危险"},
+    {"match": "subprocess.call", "cwe": "CWE-78", "note": "shell=True 时危险"},
+    {"match": "eval", "cwe": "CWE-95", "note": "动态代码执行"},
+    {"match": "exec", "cwe": "CWE-95", "note": "动态代码执行"},
+    {"match": "cursor.execute", "cwe": "CWE-89", "note": "SQL 执行，拼接时注入"},
+    {"match": "cur.execute", "cwe": "CWE-89", "note": "SQL 执行"},
+    {"match": "conn.execute", "cwe": "CWE-89", "note": "SQL 执行"},
+    {"match": "db.execute", "cwe": "CWE-89", "note": "SQL 执行"},
+    {"match": "session.execute", "cwe": "CWE-89", "note": "SQL 执行"},
+    {"match": "pickle.loads", "cwe": "CWE-502", "note": "反序列化 RCE"},
+    {"match": "pickle.load", "cwe": "CWE-502", "note": "反序列化 RCE"},
+    {"match": "yaml.load", "cwe": "CWE-502", "note": "非 SafeLoader 时 RCE"},
+    {"match": "open", "cwe": "CWE-22", "note": "路径可控时遍历，语义层确认"},
+    {"match": "send_file", "cwe": "CWE-22", "note": "Flask 文件下发"},
+    {"match": "render_template_string", "cwe": "CWE-94", "note": "模板注入"},
+    {"match": "Markup", "cwe": "CWE-79", "note": "绕过转义的 XSS"},
+    {"match": "redirect", "cwe": "CWE-601", "note": "开放重定向"}
+  ]
+}
