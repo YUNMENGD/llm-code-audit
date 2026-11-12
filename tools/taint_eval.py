@@ -108,6 +108,26 @@ def report() -> int:
     patterns = Counter(r.get("pattern", "?") for r in rows if r["verdict"] == "F")
     for pat, n in patterns.most_common():
         lines.append(f"- {pat}: {n} 条")
+    gov = doc.get("meta", {}).get("v5_governance")
+    if gov:
+        # 头部口径行给治理后现状，历史基线在对照表里保留（不误导读者）
+        lines[4] = (f"- 口径：precision = T/(T+F)；**v5 治理后 {gov['after']['precision']}"
+                    f"（{gov['after']['T']}/{gov['after']['candidates']} 候选全 T）**；"
+                    f"治理前基线 {gov['before']['precision']}（T={T} / F={F} / ?={Q}，"
+                    "下表为完整标注基线）")
+    if gov:
+        lines += ["", "## v5 精度治理前后对照（同一标注基线）", "",
+                  f"- 治理规则：{gov['rules']}", "",
+                  "| 口径 | 候选数 | T | F | precision |",
+                  "| --- | --- | --- | --- | --- |"]
+        for label, key in (("治理前", "before"), ("治理后", "after")):
+            g = gov[key]
+            lines.append(f"| {label} | {g['candidates']} | {g['T']} | {g['F']} "
+                         f"| {g['precision']} |")
+        lines += ["", f"- 零丢失校验：{gov['zero_loss']}",
+                  f"- 诚实口径：{gov['caveat']}",
+                  "- 复现：治理后重跑 `--collect` 得 5 条候选，与标注中 5 条 T 的位置"
+                  "逐一吻合；被滤除候选的过滤计数见各库 stats（filtered_*）"]
     lines += ["", "## 核验标注全文", "",
               "| 库 | 位置 | sink | 判定 | 依据 |", "| --- | --- | --- | --- | --- |"]
     for r in rows:

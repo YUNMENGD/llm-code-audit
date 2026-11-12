@@ -955,4 +955,41 @@ with tempfile.TemporaryDirectory() as _td:
 check("JS 审计模板存在", (Path(__file__).resolve().parent.parent / "prompts"
                         / "js_file_audit.md").exists())
 
+print("\n[35] taint v5 治理：四条通用过滤规则")
+with tempfile.TemporaryDirectory() as _td:
+    _tp = Path(_td)
+    (_tp / "gov.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "from argparse import ArgumentParser\n"
+        "from io import BytesIO\n"
+        "def a():\n"
+        "    frame.eval(x)\n"
+        "def b():\n"
+        "    self.open(y)\n"
+        "def c():\n"
+        "    p = Path(__file__).parent / 'data.json'\n"
+        "    open(p)\n"
+        "def d():\n"
+        "    args = ArgumentParser().parse_args()\n"
+        "    f = args.dumpfile\n"
+        "    open(f)\n"
+        "def e():\n"
+        "    send_file(BytesIO(b'x'), download_name='a.txt')\n"
+        "def g(request):\n"
+        "    n = request.args.get('n')\n"
+        "    os.system(n)\n", encoding="utf-8")
+    _tg = TT.TaintTracker().build(_tp)
+    _st = _tg.stats()
+    check("属性方法 eval/open 被裸内置过滤", _st.get("filtered_bare", 0) >= 2)
+    check("__file__ 常量路径不染色", _st.get("filtered_const", 0) >= 1)
+    check("CLI 自有参数流被过滤", _st.get("filtered_cli", 0) >= 1)
+    check("BytesIO 内存对象被过滤", _st.get("filtered_buffer", 0) >= 1)
+    check("真 web 输入流保留", any(p["call"] == "os.system"
+                                for p in _tg.paths_for_file(_tp / "gov.py")))
+    check("治理后候选只剩真流", _st["paths"] == 1)
+check("JS 知识弹药入库", any(it["id"] == "JS-CWE-79" for it in RT.load_knowledge()))
+_jsh = RT.retrieve("el.innerHTML = userInput; document.write(x)", top_k=5)
+check("JS 查询命中 JS 弹药", any(h["id"].startswith("JS-") for h in _jsh))
+
 print(f"\n全部通过：{PASS} 项 ✓")

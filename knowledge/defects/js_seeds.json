@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "name": "JS/TS 缺陷知识种子（RAG 弹药，多语言扩展）",
+    "version": "1.0",
+    "note": "与 Python 知识同口径：triggers 为代码特征词、source 必带 CWE 来源；供 js_file_audit 检索注入。新增须附来源并经评审。",
+    "maintainer": "team"
+  },
+  "items": [
+    {
+      "id": "JS-CWE-79",
+      "title": "DOM XSS：未净化内容写入 HTML 解析入口",
+      "category": "security",
+      "severity": "high",
+      "tags": ["xss", "dom", "frontend"],
+      "triggers": ["innerHTML", "outerHTML", "document.write", "insertAdjacentHTML", "dangerouslySetInnerHTML"],
+      "pattern": "外部输入（URL/消息/接口响应）未经净化赋给 innerHTML 等 HTML 解析入口，浏览器按标记执行脚本。",
+      "impact": "窃取会话 Cookie、钓鱼覆写页面、蠕虫传播。",
+      "fix": "文本用 textContent；富文本经 DOMPurify 白名单净化；React 避免 dangerouslySetInnerHTML。",
+      "source": "CWE-79 https://cwe.mitre.org/data/definitions/79.html"
+    },
+    {
+      "id": "JS-CWE-95",
+      "title": "动态代码执行：eval / new Function / 字符串定时器",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["rce", "eval", "injection"],
+      "triggers": ["eval(", "new Function", "setTimeout(\"", "setInterval(\"", "vm.runInNewContext"],
+      "pattern": "把字符串当代码执行；外部输入进入字符串即任意代码执行。",
+      "impact": "服务端 RCE / 浏览器端 XSS 与数据外泄。",
+      "fix": "数据用 JSON.parse；逻辑用显式分支或映射表；定时器传函数引用而非字符串。",
+      "source": "CWE-95 https://cwe.mitre.org/data/definitions/95.html"
+    },
+    {
+      "id": "JS-CWE-78",
+      "title": "命令注入：child_process.exec 经 shell 解释拼接串",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["rce", "shell", "node"],
+      "triggers": ["child_process", "exec(", "execSync", "shell: true", "spawn("],
+      "pattern": "exec/execSync 把整串交给 shell，模板插值或拼接可注入分号/管道/反引号。",
+      "impact": "服务器远程命令执行、横向移动。",
+      "fix": "execFile/spawn 传参数数组不经 shell；必须 shell 时严格白名单校验输入。",
+      "source": "CWE-78 https://cwe.mitre.org/data/definitions/78.html"
+    },
+    {
+      "id": "JS-CWE-89",
+      "title": "SQL 注入：模板串/拼接构造查询",
+      "category": "security",
+      "severity": "critical",
+      "tags": ["sqli", "database", "node"],
+      "triggers": [".query(`", "execute(`", "SELECT ${", "WHERE ${", "sequelize.query"],
+      "pattern": "SQL 语句用模板串插值或 + 拼接构造，输入改变语句结构。",
+      "impact": "拖库、篡改、鉴权绕过。",
+      "fix": "参数化占位符（? / $1 / :name）+ 参数数组；ORM 用条件对象而非 raw 拼接。",
+      "source": "CWE-89 https://cwe.mitre.org/data/definitions/89.html"
+    },
+    {
+      "id": "JS-CWE-330",
+      "title": "不安全随机数：Math.random 用于安全场景",
+      "category": "security",
+      "severity": "high",
+      "tags": ["crypto", "token", "random"],
+      "triggers": ["Math.random", "toString(36)", "Date.now() +", "uuid.v1"],
+      "pattern": "Math.random 非密码学安全且可被状态恢复预测；用于 token/验证码/重置链接即可枚举。",
+      "impact": "会话劫持、账户接管。",
+      "fix": "crypto.randomBytes / crypto.getRandomValues / uuid.v4。",
+      "source": "CWE-330 https://cwe.mitre.org/data/definitions/330.html"
+    },
+    {
+      "id": "JS-CWE-1321",
+      "title": "原型链污染：可控键写入 __proto__ / constructor.prototype",
+      "category": "security",
+      "severity": "high",
+      "tags": ["prototype", "pollution", "node"],
+      "triggers": ["__proto__", "constructor.prototype", "Object.assign(target, req", "merge(", "lodash.merge"],
+      "pattern": "递归合并/赋值未过滤 __proto__、constructor、prototype 键，攻击者改写 Object 原型影响全局。",
+      "impact": "鉴权绕过、RCE（配合模板引擎）、拒绝服务。",
+      "fix": "合并前键白名单/拒绝危险键；用 Object.create(null) 或 Map 承载外部数据；升级已修复的 lodash 等依赖。",
+      "source": "CWE-1321 https://cwe.mitre.org/data/definitions/1321.html"
+    }
+  ]
+}

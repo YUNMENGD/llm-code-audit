@@ -5,7 +5,7 @@
 识别安全漏洞、逻辑错误、规范问题，经规则校验与交叉复核后，输出带定位信息和修复建议的
 结构化审计报告。支持 **Python + JS/TS** 双语言（静态层 + 语义层）。
 
-**18 条 Python 硬规则 + 12 条 JS/TS 规则 · 61 条缺陷知识 · 6 个真实开源库 125 条人工核验标注 · 零真缺陷误杀红线**
+**18 条 Python 硬规则 + 12 条 JS/TS 规则 · 67 条缺陷知识 · 6 个真实开源库 125 条人工核验标注 · 零真缺陷误杀红线**
 
 ## 分层降噪架构
 
@@ -21,7 +21,7 @@
     │     + 跨文件调用图（AST fqn 解析）：给 LLM 提供"谁调用了它"的影响范围证据
     │     + 污点追踪（source→sink 目录 + 调用图迭代传播）：数据流证据链注入
     │
-    ② RAG 知识检索：61 条缺陷知识（CWE 来源标注）按需注入 Prompt
+    ② RAG 知识检索：67 条缺陷知识（CWE 来源标注，含 JS/TS 弹药）按需注入 Prompt
     │     + Agentic 逃生舱：模型可申请补充检索（NEED-EVIDENCE），系统回填重问
     │
     ③ LLM 分析：函数/文件/工程三级模板（Python）+ 文件级模板（JS/TS）
@@ -64,7 +64,7 @@ python -m codeaudit real-eval     # 六库对照报表（免 API）
 | 实验 | 结论 | 文档 |
 | --- | --- | --- |
 | RAG 消融（关键词 vs 向量融合，119 条 T/F 真值，双查询口径） | 关键词臂 recall@5：文件窗 0.714 / 函数窗 0.592；向量臂待 embeddings 端点（⚠️暂未获取，接口已就绪） | [rag-ablation-results.md](docs/rag-ablation-results.md) |
-| 污点追踪真实库量化（六库候选路径逐条人工核验） | precision 0.417（T5/F7），误报模式归因：类型不符/护栏覆盖/常量误染/CLI 自有参数——证据层噪声可控且可解释 | [taint-eval-results.md](docs/taint-eval-results.md) |
+| 污点追踪真实库量化（六库候选路径逐条人工核验 + v5 精度治理） | 治理前 precision 0.417（T5/F7）→ 四条通用规则治理后 **1.0（5/5 全 T，真流零丢失）**；误报模式归因：类型不符/护栏覆盖/常量误染/CLI 自有参数 | [taint-eval-results.md](docs/taint-eval-results.md) |
 | JS/TS 语义审计（bench-js 真实模型调用） | 预埋缺陷 10/10 检出、反例零误报；语义层独有发现 2 条（正则覆盖不到的形态） | [js-audit-results.md](docs/js-audit-results.md) |
 | 静态扫描性能（六库串行 vs 进程池） | 结果逐条一致；trio（144 文件）×2.04、botocore ×1.27；小目录并行负优化 → 自动阈值 <64 文件走串行 | [perf-scan-results.md](docs/perf-scan-results.md) |
 | LLM 定级对照（三轮 34 条） | 知识注入后误报击杀率过半，三轮真缺陷误杀恒 0；定级层温度不可复现（翻转 14.7%）→ 分层边界依据 | [ai-adjudication-results.md](docs/ai-adjudication-results.md) |
@@ -120,7 +120,7 @@ python desktop.py
 python -m codeaudit mcp        # 绿色版：CodeAudit.exe --mcp
 # 7 工具 + 知识库只读资源 + 审计话术模板；配置在桌面端「MCP」页一键复制
 
-# ④ 测试：251 项离线单测 + 六库回归红线
+# ④ 测试：259 项离线单测 + 六库回归红线
 python tests/test_offline.py
 python -m pytest
 ```
@@ -165,7 +165,7 @@ llm-code-audit/
 ├── web/              # 桌面端前端（六页签单页应用）
 ├── tools/            # 打包、消融/性能/污点实验、评审门禁、反馈聚合
 ├── desktop.py        # 桌面应用入口（pywebview 窗口 + 本地 FastAPI + --mcp）
-├── tests/            # 251 项离线单测 + bench-real 回归红线
+├── tests/            # 259 项离线单测 + bench-real 回归红线
 ├── examples/         # Python/JS 测试样例 + CI 门禁模板
 ├── docs/             # 需求/设计/决策/实验文档（实验矩阵见上）
 └── out/              # 审计报告与实验产物（不入库）

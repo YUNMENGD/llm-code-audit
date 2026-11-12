@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -32,6 +33,13 @@ _EXTERNAL_RX = re.compile(
     r"\brequest\b|\bflask\b|\bargv\b|os\.environ|os\.getenv|\binput\s*\(|"
     r"sys\.stdin|\.args\b|\.form\b|\.json\b|\.data\b|\.values\b|\.cookies\b|"
     r"\bheaders\b|\.query_params\b|\.GET\b|\.POST\b")
+
+# 字符串字面量遮蔽：文件名 ".json" 等文案不得撞外部输入特征（CONST 误染治理）
+_STR_RX = re.compile(r"\"\"\".*?\"\"\"|'''.*?'''|\"[^\"\n]*\"|'[^'\n]*'", re.S)
+
+
+def _strip_strings(text: str) -> str:
+    return _STR_RX.sub('""', text)
 
 
 def load_catalog() -> dict:
@@ -150,7 +158,7 @@ class TaintTracker:
                                            "cwe": src.get("cwe", "")})
                     self.stats_d["sources"] += 1
                 sink = _match_catalog(name, self.sinks)
-                if sink:
+                if sink and self._sink_applicable(node, name):
                     rec["sinks"].append({
                         "line": node.lineno, "call": name,
                         "cwe": sink.get("cwe", ""),
@@ -174,6 +182,26 @@ class TaintTracker:
                             _call_name(node.value.func), self.sources))
                         if isinstance(node.value, ast.Call) else False})
 
+    # 方法名撞车治理（对齐 Python 规则层 NAME 口径）：open/eval/exec 只认
+    # 裸内置调用；self.open / frame.eval 等属性调用是同名方法，不是该 sink
+    _BARE_SINKS = {"open", "eval", "exec"}
+
+    def _sink_applicable(self, node: ast.Call, name: str) -> bool:
+        last = name.rsplit(".", 1)[-1]
+        if last in self._BARE_SINKS and not isinstance(node.func, ast.Name) \
+                and not name.startswith("builtins."):
+            self.stats_d["filtered_bare"] = self.stats_d.get("filtered_bare", 0) + 1
+            return False
+        # 内存对象非路径：send_file(BytesIO(...)) 不构成路径遍历（TYPE 治理）
+        if name.endswith("send_file") and node.args:
+            a0 = node.args[0]
+            if isinstance(a0, ast.Call) and _call_name(a0.func).rsplit(".", 1)[-1] \
+                    in ("BytesIO", "StringIO"):
+                self.stats_d["filtered_buffer"] = \
+                    self.stats_d.get("filtered_buffer", 0) + 1
+                return False
+        return True
+
     @staticmethod
     def _expr_names(expr: ast.expr) -> set[str]:
         """表达式里出现的名字集合（含属性链根名），用于污点传播判定。"""
@@ -186,20 +214,35 @@ class TaintTracker:
     # ---------- 传播 ----------
 
     def _propagate(self, max_rounds: int = 6) -> None:
-        # 初始染色：source 调用赋值 + 外部输入特征赋值 + 形参默认潜在载体不预染
+        # 初始染色：source 调用赋值 + 外部输入特征赋值（字符串遮蔽后判定）；
+        # __file__ 派生的仓库内常量路径不染色（CONST 治理）；
+        # parse_args 派生变量染 CLI 信任色（本地工具自有参数，非攻击面）
         for fqn, rec in self.funcs.items():
+            rec["cli_vars"] = set()
             for a in rec["assigns"]:
-                if a["is_source"] or _EXTERNAL_RX.search(a["text"]):
+                masked = _strip_strings(a["text"])
+                if "__file__" in masked and not a["is_source"]:
+                    self.stats_d["filtered_const"] = \
+                        self.stats_d.get("filtered_const", 0) + 1
+                    continue
+                if a["is_source"] or _EXTERNAL_RX.search(masked) \
+                        or "parse_args(" in masked:
                     rec["tainted"].add(a["var"])
+                    if "parse_args(" in masked:
+                        rec["cli_vars"].add(a["var"])
         for rnd in range(max_rounds):
             changed = False
             for fqn, rec in self.funcs.items():
                 tainted = rec["tainted"]
-                # 函数内赋值传播（右式引用已染色名字）
+                cli = rec["cli_vars"]
+                # 函数内赋值传播（右式引用已染色名字）；全由 CLI 色传入则继承 CLI 色
                 for a in rec["assigns"]:
-                    if a["var"] not in tainted and (a["names"] & tainted):
+                    hit = a["names"] & tainted
+                    if a["var"] not in tainted and hit:
                         tainted.add(a["var"])
                         changed = True
+                        if hit <= cli:
+                            cli.add(a["var"])
                 # 跨函数：实参含污点 → 被调函数形参染色
                 for c in rec["calls"]:
                     callee = self.funcs.get(c["callee"])
@@ -221,14 +264,21 @@ class TaintTracker:
             self.stats_d["rounds"] = rnd + 1
             if not changed:
                 break
-        # 汇总候选路径：sink 实参引用了染色名字（或本身是外部输入表达式）
+        # 汇总候选路径：sink 实参引用了染色名字（或本身是外部输入表达式）；
+        # 纯 CLI 信任色的流默认过滤（AUDIT_TAINT_CLI=1 可保留供本地工具审计）
+        keep_cli = os.getenv("AUDIT_TAINT_CLI", "0") == "1"
         for fqn, rec in self.funcs.items():
             for s in rec["sinks"]:
                 for idx, names in enumerate(s["arg_names"]):
                     hit_vars = names & rec["tainted"]
                     text = s["arg_text"][idx] if idx < len(s["arg_text"]) else ""
-                    external = bool(_EXTERNAL_RX.search(text))
+                    external = bool(_EXTERNAL_RX.search(_strip_strings(text)))
                     if not hit_vars and not external:
+                        continue
+                    if hit_vars and hit_vars <= rec["cli_vars"] and not external \
+                            and not keep_cli:
+                        self.stats_d["filtered_cli"] = \
+                            self.stats_d.get("filtered_cli", 0) + 1
                         continue
                     origin = self._origin(fqn, rec, hit_vars)
                     self.paths.append({

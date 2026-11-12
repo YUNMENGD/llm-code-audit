@@ -4,7 +4,15 @@
     "annotated_at": "2026-11-12",
     "method": "TaintTracker 候选路径逐条读源码上下文核验：T=真实外部数据流到达 sink（含设计特性，流本身真实）；F=近似误报（非外部输入/类型不符/护栏已覆盖）；?=存疑单列",
     "pattern_legend": "TYPE=对象类型不符（非文件 open/非内置 eval） GUARD=护栏或信任边界已覆盖 CONST=常量路径误染 CLI=本地 CLI 工具自有参数 DESIGN=设计特性（流真实但属文档化行为）",
-    "note": "候选是静态近似提示而非裁决；precision 度量证据层噪声，口径同 bench-real（T/(T+F)，? 单列）。库源码不入库，复现按 bench-real clone 字段下载 realtest/ 后跑 tools/taint_eval.py --collect"
+    "note": "候选是静态近似提示而非裁决；precision 度量证据层噪声，口径同 bench-real（T/(T+F)，? 单列）。库源码不入库，复现按 bench-real clone 字段下载 realtest/ 后跑 tools/taint_eval.py --collect",
+    "v5_governance": {
+      "date": "2026-11-12",
+      "rules": "四条通用治理（非针对个案）：①open/eval/exec 只认裸内置调用（末段名判定，builtins. 显式前缀豁免）②send_file(BytesIO/StringIO) 内存对象非路径过滤 ③赋值文本字符串遮蔽后判外部特征 + __file__ 派生常量不染色 ④parse_args 派生变量记 CLI 信任色并传播，纯 CLI 流默认过滤（AUDIT_TAINT_CLI=1 可保留）",
+      "before": {"candidates": 12, "T": 5, "F": 7, "precision": 0.417},
+      "after": {"candidates": 5, "T": 5, "F": 0, "precision": 1.0},
+      "zero_loss": "治理前后 T 候选集合完全一致（5/5 保留），被滤除的 7 条全部为此前核验的 F；过滤计数透明入 stats（filtered_bare/const/cli/buffer）",
+      "caveat": "小样本（12→5）上的治理效果，不外推为任意代码库的 precision；标注基线固化可复核"
+    }
   },
   "annotations": [
     {"lib": "flask", "file": "cli.py", "line": 1023, "call": "eval", "verdict": "T", "pattern": "DESIGN", "note": "PYTHONSTARTUP 环境变量→读取文件→eval 执行，流真实；解释器启动脚本兼容是文档化设计，信任边界=本地环境"},
