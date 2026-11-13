@@ -283,6 +283,15 @@ def cancel_job(job_id: str) -> dict:
             "note": "已请求取消：静态任务在文件间隙停止；AI 任务在当前模型调用返回后停止"}
 
 
+@app.get("/api/demo-target")
+def demo_target() -> dict:
+    """内置示例目录（一键体验用）：随包分发，静态检查免密钥即可出结果。"""
+    p = (WEB_DIR.parent / "examples").resolve()
+    if not p.exists():
+        raise HTTPException(404, "未找到内置示例目录")
+    return {"path": str(p)}
+
+
 @app.get("/api/pick")
 def pick(kind: str = "file") -> dict:
     """弹系统文件/目录选择框（后端与前端同机）。kind: file | dir。

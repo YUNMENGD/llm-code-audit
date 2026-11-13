@@ -34,7 +34,8 @@
   .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; }
   .panel h2 { font-size:13px; color:var(--dim); font-weight:600; margin-bottom:10px; }
   .grid2 { display:grid; grid-template-columns:340px 1fr; gap:14px; height:calc(100vh - 96px); }
-  #page-audit .grid2 > .panel:first-child { overflow-y:auto; }
+  .grid2 > .panel { min-height:0; }
+  #page-audit .grid2 > .panel:first-child { overflow:hidden; }
   label { display:block; margin:10px 0 4px; font-size:12px; color:var(--dim); }
   label.ckrow { display:flex; align-items:center; gap:6px; margin-top:10px; cursor:pointer; font-size:12px; }
   label.ckrow input { accent-color:var(--accent); cursor:pointer; }
@@ -62,7 +63,64 @@
   #pbar i { display:block; height:100%; width:0; background:var(--accent); border-radius:2px; transition:width .4s; }
   #log { margin-top:8px; background:var(--code); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:11px/1.6 Consolas,monospace; color:var(--dim); flex:1 1 160px; height:160px; min-height:120px; max-height:280px; overflow:auto; white-space:pre-wrap; }
   #out { position:relative; overflow:auto; }
-  #empty { color:var(--dim); text-align:center; margin-top:26vh; }
+  /* ── 审计配置：分组卡片 + 开关（配置区滚动，执行区固定） ── */
+  .cfg { display:flex; flex-direction:column; gap:8px; flex:1 1 auto; min-height:0; overflow-y:auto; padding-right:5px; }
+  .cfg-sec { border:1px solid var(--line); border-radius:8px; background:var(--code); padding:9px 11px; flex:none; }
+  .cfg-sec > .hd { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:700; color:var(--dim); letter-spacing:.5px; margin-bottom:7px; }
+  .cfg-sec > .hd .num { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:4px; background:var(--soft); color:var(--accent); font-size:10px; border:1px solid var(--line); }
+  .cfg-sec > .hd .hint { margin-left:auto; font-weight:400; letter-spacing:0; color:var(--dim); font-size:11px; }
+  .cfg-sec label { margin:0 0 5px; }
+  .cfg-sec .segs, .cfg-sec .pickrow { margin-top:0; }
+  .cfg-sec .segs button, .cfg-sec .pickrow button { padding:8px 4px; }
+  .opt { display:flex; align-items:flex-start; gap:9px; padding:5px 0; cursor:pointer; }
+  .opt + .opt { border-top:1px dashed var(--line); }
+  .opt input { margin:2px 0 0; accent-color:var(--accent); cursor:pointer; flex:none; width:14px; height:14px; }
+  .opt .t { font-size:12.5px; color:var(--txt); line-height:1.45; }
+  .opt .d { display:block; font-size:11px; color:var(--dim); margin-top:1px; }
+  .opt:hover .t { color:var(--accent); }
+  .cfg-foot { flex:none; padding-top:10px; margin-top:8px; border-top:1px solid var(--line); }
+  #run { margin-top:0; }
+  #run-row { display:flex; gap:8px; align-items:stretch; }
+  #run-row #run { flex:1; }
+  #cancel { display:none; padding:8px 14px; }
+  .kbd { font-size:10px; opacity:.8; border:1px solid rgba(255,255,255,.45); border-radius:3px; padding:0 4px; margin-left:6px; }
+  .dim-sec { opacity:.5; pointer-events:none; }
+  .dim-sec > .hd .hint { color:var(--warn); }
+  .cfg::-webkit-scrollbar, #log::-webkit-scrollbar, #out::-webkit-scrollbar { width:8px; }
+  .cfg::-webkit-scrollbar-track, #log::-webkit-scrollbar-track, #out::-webkit-scrollbar-track { background:var(--soft); border-radius:4px; }
+  .cfg::-webkit-scrollbar-thumb, #log::-webkit-scrollbar-thumb, #out::-webkit-scrollbar-thumb { background:var(--line); border-radius:4px; }
+  .cfg::-webkit-scrollbar-thumb:hover, #log::-webkit-scrollbar-thumb:hover, #out::-webkit-scrollbar-thumb:hover { background:var(--accent); }
+  /* ── 配置分组锚点 + 滚动渐隐提示 ── */
+  .cfg-nav { display:flex; gap:5px; margin-bottom:9px; flex:none; }
+  .cfg-nav button { flex:1; padding:5px 2px; font-size:11px; border-radius:6px; border:1px solid var(--line); background:var(--code); color:var(--dim); cursor:pointer; transition:all .15s; }
+  .cfg-nav button:hover { border-color:var(--accent); color:var(--accent); }
+  .cfg-nav button.on { background:var(--soft); border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .cfg-wrap { position:relative; flex:1 1 auto; min-height:0; display:flex; }
+  .cfg-wrap::after { content:""; position:absolute; left:0; right:5px; bottom:0; height:26px; pointer-events:none; background:linear-gradient(to top,var(--card),transparent); opacity:0; transition:opacity .2s; }
+  .cfg-wrap.more::after { opacity:1; }
+  .cfg-more { position:absolute; right:10px; bottom:2px; z-index:2; font-size:10px; color:var(--accent); background:var(--soft); border:1px solid var(--line); border-radius:10px; padding:1px 8px; pointer-events:none; opacity:0; transition:opacity .2s; }
+  .cfg-wrap.more .cfg-more { opacity:1; }
+  /* ── 空状态引导面板 ── */
+  #empty { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; height:100%; min-height:420px; padding:24px; text-align:center; overflow:hidden; }
+  #empty::before { content:""; position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(680px 340px at 50% -8%, var(--soft), transparent 70%),
+               radial-gradient(420px 260px at 88% 108%, var(--soft), transparent 72%); }
+  #empty > * { position:relative; }
+  #empty .hero-ic { width:68px; height:68px; border-radius:20px; display:flex; align-items:center; justify-content:center; background:linear-gradient(140deg,var(--accent),var(--accent2)); box-shadow:0 6px 20px rgba(61,127,217,.28); }
+  #empty .hero-ic svg { width:34px; height:34px; }
+  #empty h3 { font-size:17px; color:var(--txt); font-weight:600; }
+  #empty .sub { font-size:12.5px; color:var(--dim); max-width:520px; line-height:1.7; }
+  .quick { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .quick button { padding:9px 18px; border-radius:8px; border:1px solid var(--accent); background:var(--soft); color:var(--accent); font-size:13px; cursor:pointer; transition:all .15s; }
+  .quick button:hover { background:var(--accent); color:#fff; transform:translateY(-1px); }
+  .quick button.ghostq { border-color:var(--line); background:var(--code); color:var(--dim); }
+  .quick button.ghostq:hover { border-color:var(--accent); color:var(--accent); background:var(--soft); transform:translateY(-1px); }
+  .caps { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; width:100%; max-width:680px; }
+  .cap { border:1px solid var(--line); border-radius:8px; background:var(--code); padding:10px 12px; text-align:left; }
+  .cap b { display:block; font-size:12px; color:var(--txt); margin-bottom:3px; }
+  .cap span { font-size:11px; color:var(--dim); line-height:1.5; }
+  #empty .keys { font-size:11px; color:var(--dim); }
+  #empty .keys .kbd { border-color:var(--line); color:var(--dim); opacity:1; }
   #frame { width:100%; height:calc(100vh - 230px); border:1px solid var(--line); border-radius:6px; background:#fff; }
   .tabs { display:flex; gap:8px; margin-bottom:8px; }
   .tabs button { padding:5px 14px; background:var(--card); border:1px solid var(--line); border-radius:14px; color:var(--dim); cursor:pointer; font-size:12px; }
@@ -129,42 +187,93 @@
   <div class="grid2">
     <section class="panel">
       <h2>审计配置</h2>
-      <label>目标路径（.py 文件或文件夹）</label>
-      <input type="text" id="target" placeholder="可点下方按钮选择，或粘贴路径">
-      <div class="pickrow">
-        <button id="pick-file">选择文件</button>
-        <button id="pick-dir">选择文件夹</button>
+      <div class="cfg-nav" id="cfg-nav">
+        <button data-go="0" class="on">目标</button>
+        <button data-go="1">模式</button>
+        <button data-go="2">范围</button>
+        <button data-go="3">增强</button>
       </div>
-      <label>模式</label>
-      <div class="segs" id="modes">
-        <button data-v="static" class="sel">静态检查（免费）</button>
-        <button data-v="ai">AI 深度审计</button>
+      <div class="cfg-wrap" id="cfg-wrap">
+      <span class="cfg-more">下方还有选项 ▾</span>
+      <div class="cfg" id="cfg">
+        <div class="cfg-sec">
+          <div class="hd"><span class="num">1</span>目标<span class="hint">文件或文件夹</span></div>
+          <input type="text" id="target" placeholder="粘贴路径，或用下方按钮选择">
+          <div class="pickrow" style="margin-top:6px">
+            <button id="pick-file">选择文件</button>
+            <button id="pick-dir">选择文件夹</button>
+          </div>
+        </div>
+        <div class="cfg-sec">
+          <div class="hd"><span class="num">2</span>模式<span class="hint" id="mode-hint">静态免费秒出</span></div>
+          <div class="segs" id="modes">
+            <button data-v="static" class="sel">静态检查</button>
+            <button data-v="ai">AI 深度审计</button>
+          </div>
+          <div id="depth-wrap" class="dim-sec" style="margin-top:9px">
+            <div class="hd" style="margin-bottom:5px"><span class="hint" style="margin:0">审计粒度 · 仅 AI 模式生效</span></div>
+            <div class="segs" id="depths">
+              <button data-v="file" class="sel">文件级</button>
+              <button data-v="function">函数级</button>
+              <button data-v="project">工程级</button>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-sec">
+          <div class="hd"><span class="num">3</span>范围<span class="hint">查什么 · 查多少</span></div>
+          <div class="segs" id="presets">
+            <button data-v="full" class="sel">全量</button>
+            <button data-v="security">安全专项</button>
+            <button data-v="quality">代码质量</button>
+          </div>
+          <label class="opt" style="margin-top:4px"><input type="checkbox" id="incr">
+            <span class="t">增量审计<span class="d">只扫 git 相对 HEAD 的变更文件，调用图仍按全库构建</span></span></label>
+        </div>
+        <div class="cfg-sec">
+          <div class="hd"><span class="num">4</span>增强<span class="hint">可选，默认保守</span></div>
+          <label class="opt"><input type="checkbox" id="a-cache">
+            <span class="t">静态扫描缓存<span class="d">未改动文件直接复用结果，规则变更自动失效</span></span></label>
+          <label class="opt"><input type="checkbox" id="a-entropy">
+            <span class="t">高熵密钥检测<span class="d">香农熵抓正则漏掉的凭据，置信度 0.6</span></span></label>
+          <label class="opt"><input type="checkbox" id="cross">
+            <span class="t">双模型交叉复核<span class="d">AI 模式生效，需在设置页配置第二模型</span></span></label>
+          <label class="opt"><input type="checkbox" id="fewshot" checked>
+            <span class="t">few-shot 校准示例<span class="d">AI 模式生效，注入正反例稳住判定口径</span></span></label>
+        </div>
       </div>
-      <label>粒度（AI 模式生效）</label>
-      <div class="segs" id="depths">
-        <button data-v="file" class="sel">文件级</button>
-        <button data-v="function">函数级</button>
-        <button data-v="project">工程级</button>
       </div>
-      <label class="ckrow"><input type="checkbox" id="incr"> 增量审计——只扫 git 相对 HEAD 的变更文件</label>
-      <label class="ckrow"><input type="checkbox" id="cross"> 双模型交叉复核（需设置第二模型）</label>
-      <label class="ckrow"><input type="checkbox" id="fewshot" checked> few-shot 校准示例</label>
-      <label>预设 / 严重度阈值（也可在「选项」页设默认值）</label>
-      <div class="segs" id="presets">
-        <button data-v="full" class="sel">全量</button>
-        <button data-v="security">安全专项</button>
-        <button data-v="quality">代码质量</button>
+      <div class="cfg-foot">
+        <div id="run-row">
+          <button id="run" class="btn">开始审计<span class="kbd">Ctrl+↵</span></button>
+          <button id="cancel" class="btn ghost">取消</button>
+        </div>
+        <div id="status"></div>
+        <div id="pbar"><i></i></div>
+        <pre id="log">等待任务…</pre>
       </div>
-      <label class="ckrow"><input type="checkbox" id="a-entropy"> 高熵密钥检测</label>
-      <label class="ckrow"><input type="checkbox" id="a-cache"> 静态扫描缓存</label>
-      <button id="run" class="btn">开始审计（Ctrl+Enter）</button>
-      <div class="btnrow"><button id="cancel" class="btn ghost sm" style="display:none">取消任务</button></div>
-      <div id="status"></div>
-      <div id="pbar"><i></i></div>
-      <pre id="log">等待任务…</pre>
     </section>
     <section class="panel" id="out">
-      <div id="empty">左侧选路径，开始第一次审计<br><small>静态检查免费秒出；AI 深度审计显示逐步进度，完成自动存入历史</small></div>
+      <div id="empty">
+        <div class="hero-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6 4.5 5.4v6c0 4.6 3.1 8.4 7.5 10 4.4-1.6 7.5-5.4 7.5-10v-6L12 2.6Z" fill="rgba(255,255,255,.18)"/><path d="m8.6 11.9 2.4 2.4 4.4-4.6"/></svg></div>
+        <div>
+          <h3>分层降噪 · 代码审计工作台</h3>
+          <p class="sub">静态规则层零成本秒出结果，大模型层做语义裁决；跨文件调用图与污点追踪提供证据链，
+            双模型交叉复核与零误杀红线守住可信度。左侧四步配置后即可开始。</p>
+        </div>
+        <div class="quick">
+          <button id="q-demo">▶ 一键体验示例项目</button>
+          <button id="q-pick" class="ghostq">选择我的项目</button>
+          <button id="q-hist" class="ghostq">查看历史与趋势</button>
+        </div>
+        <div class="caps">
+          <div class="cap"><b>双语言</b><span>Python 18 条硬规则 + JS/TS 12 条，静态与语义双层</span></div>
+          <div class="cap"><b>可解释</b><span>每条告警带行号、证据原文与修复建议，可一键生成 diff</span></div>
+          <div class="cap"><b>可集成</b><span>SARIF / PDF / 脱敏分享导出，MCP 七工具接入 IDE</span></div>
+          <div class="cap"><b>可回归</b><span>增量审计 + 两次报告对比 + 历史趋势看板</span></div>
+        </div>
+        <p class="keys">快捷键 <span class="kbd">Ctrl</span>+<span class="kbd">↵</span> 开始审计 ·
+          静态检查免密钥免费 · AI 深度审计需在设置页配置模型</p>
+      </div>
       <div id="errbox"></div>
       <div id="stats" style="display:none"></div>
       <div class="tabs" id="tabs" style="display:none">
@@ -462,9 +571,44 @@ function seg(el, cb) {
     b.classList.add("sel"); cb(b.dataset.v);
   });
 }
-seg($("#modes"), v => mode = v);
+function syncModeUI() {
+  const ai = mode === "ai";
+  $("#mode-hint").textContent = ai ? "调用模型，慢但深" : "静态免费秒出";
+  $("#depth-wrap").classList.toggle("dim-sec", !ai);
+  ["cross", "fewshot"].forEach(id => {
+    const box = $("#" + id), row = box.closest(".opt");
+    if (!row) return;
+    box.disabled = !ai;
+    row.classList.toggle("dim-sec", !ai);
+    row.title = ai ? "" : "仅 AI 深度审计模式生效";
+  });
+}
+seg($("#modes"), v => { mode = v; syncModeUI(); });
 seg($("#depths"), v => depth = v);
 seg($("#presets"), v => preset = v);
+syncModeUI();
+
+/* 配置分组锚点：点击直达 + 滚动高亮 + 底部渐隐提示 */
+(function cfgNav() {
+  const wrap = $("#cfg-wrap"), sc = $("#cfg");
+  const secs = [...sc.querySelectorAll(".cfg-sec")];
+  const btns = [...document.querySelectorAll("#cfg-nav button")];
+  const sync = () => {
+    const rest = sc.scrollHeight - sc.scrollTop - sc.clientHeight;
+    wrap.classList.toggle("more", rest > 12);
+    let cur = 0;
+    secs.forEach((s, i) => { if (s.offsetTop - sc.scrollTop <= 24) cur = i; });
+    if (rest <= 12) cur = secs.length - 1;   // 触底时归到最后一组
+    btns.forEach((b, i) => b.classList.toggle("on", i === cur));
+  };
+  btns.forEach((b, i) => b.onclick = () => {
+    sc.scrollTo({ top: secs[i].offsetTop - sc.offsetTop, behavior: "smooth" });
+  });
+  sc.addEventListener("scroll", sync, { passive: true });
+  window.addEventListener("resize", sync);
+  sync();
+  setTimeout(sync, 300);
+})();
 
 /* ---------- 环境自检 ---------- */
 function refreshEnv() {
@@ -497,6 +641,22 @@ async function pick(kind) {
 }
 $("#pick-file").onclick = () => pick("file");
 $("#pick-dir").onclick = () => pick("dir");
+
+/* 空状态快捷入口：一键体验用内置示例目录，真实可跑 */
+$("#q-demo").onclick = async () => {
+  try {
+    const r = await api("/api/demo-target");
+    $("#target").value = r.path;
+    mode = "static";
+    document.querySelectorAll("#modes button").forEach(x =>
+      x.classList.toggle("sel", x.dataset.v === "static"));
+    syncModeUI();
+    toast("已填入内置示例项目，开始静态检查", "ok");
+    startAudit();
+  } catch (e) { toast(e.message, "err"); }
+};
+$("#q-pick").onclick = () => pick("dir");
+$("#q-hist").onclick = () => document.querySelector('#nav button[data-p="history"]').click();
 
 async function startAudit() {
   const target = $("#target").value.trim();

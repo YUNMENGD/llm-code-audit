@@ -132,7 +132,7 @@ python -m codeaudit review list             # 误报评审：adopt/reject/apply�
 python -m codeaudit depscan .               # 依赖 CVE（需本机 pip-audit / npm）
 python -m codeaudit export out/report.json --sarif out/r.sarif
 
-# ④ 测试：317 项离线单测 + 六库回归红线
+# ④ 测试：325 项离线单测 + 六库回归红线
 python tests/test_offline.py
 python -m pytest
 ```
@@ -153,14 +153,14 @@ python -m pytest
 | 完成通知 / webhook | 选项页（webhook 只发统计摘要） | 关 |
 | 误报评审 + 人工标注 | 飞轮页 / `review` 命令 | 采纳后须过零误杀闸门才写库 |
 | 规则/知识包共享 | `pack export/import`（带校验和） | 按需 |
-| 依赖 CVE 扫描 | `depscan` / 选项页 | 按需（工具缺失如实报） |
+| 依赖 CVE 扫描 | `depscan` / 选项页；`PIPAUDIT_BIN` 可指定工具路径 | 按需（工具缺失/输出异常均如实报，绝不静默当 0 漏洞） |
 | 多模型投票（2~3 家） | `AUDIT_VOTE_MODELS=3` + `LLM3_*` | 单模型 |
 
 ### 桌面端功能一览
 
 | 页签 | 能力 |
 | --- | --- |
-| 审计 | 静态/AI 双模式（Python+JS/TS）、三粒度、增量审计、双模型交叉复核、few-shot 开关、真实进度条、任务取消、Ctrl+Enter 快捷启动 |
+| 审计 | **四步分组配置**（目标/模式/范围/增强，带锚点直达与滚动提示）、执行区固定底部、空状态**一键体验示例项目**；静态/AI 双模式（Python+JS/TS）、三粒度、增量审计、双模型交叉复核、few-shot 开关、真实进度条、任务取消、Ctrl+Enter 快捷启动；仅 AI 生效的选项在静态模式下自动置灰 |
 | 历史 | 完成任务自动存档（保留最近 50 次），回看交互报告、删除、导出 HTML/MD/JSON/**脱敏分享版**、勾选两份报告 **diff 对比**（新增/消除/移动/存续）、**趋势图**（问题数/严重度随时间变化） |
 | 知识库 | 条目搜索/新增/编辑/删除（自定义写 `knowledge/defects/custom.json`，内置只读保护评测口径）、一键重建向量索引 |
 | 规则库 | 硬规则查看 + 自定义正则规则（保存前强制编译校验 + 样例试跑预览），写入即进静态引擎 |
@@ -199,7 +199,7 @@ llm-code-audit/
 ├── web/              # 桌面端前端（八页签单页应用）
 ├── tools/            # 打包、消融/性能/污点实验、评审门禁、反馈聚合
 ├── desktop.py        # 桌面应用入口（pywebview 窗口 + 本地 FastAPI + --mcp）
-├── tests/            # 317 项离线单测 + bench-real 回归红线
+├── tests/            # 325 项离线单测 + bench-real 回归红线
 ├── examples/         # Python/JS 测试样例 + CI 门禁模板
 ├── docs/             # 需求/设计/决策/实验文档（实验矩阵见上）
 └── out/              # 审计报告与实验产物（不入库）
