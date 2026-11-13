@@ -33,6 +33,8 @@ FIELDS: dict[str, tuple[str, bool, str]] = {
     "AUDIT_MAX_RETRY": ("调用重试次数（1~10）", False, "3"),
     "AUDIT_CONSISTENCY_RUNS": ("一致性轮数（1~5）", False, "1"),
     "AUDIT_CROSS_REVIEW": ("默认启用交叉复核（0/1）", False, "0"),
+    "PIPAUDIT_BIN": ("pip-audit 可执行文件路径（留空=自动探测 PATH 与 D:\\tools\\pip-audit）",
+                     False, ""),
 }
 
 

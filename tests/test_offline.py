@@ -1226,7 +1226,35 @@ with tempfile.TemporaryDirectory() as _td:
     if _r["tools"]:
         check("注入结果转成问题", _r["issues"][0].rule_id == "DEP-CVE-2024-0001"
               and "1.1" in _r["issues"][0].fix)
+        # 回归锁定：工具空输出/坏 JSON 绝不能被当成「0 漏洞」（曾真实发生）
+        _empty = DS.scan(Path(_td), runner=lambda c, w, t: "")
+        check("空输出如实报不可信", "不可信" in _empty["note"])
+        _bad = DS.scan(Path(_td), runner=lambda c, w, t: "Traceback: boom")
+        check("坏输出如实报不可信", "不可信" in _bad["note"])
+        _diag = DS.scan(Path(_td), runner=lambda c, w, t: ("", "退出码 2：env broken"))
+        check("诊断信息向上传递", "env broken" in _diag["note"])
+        # 绝对路径 + --no-deps：防相对路径错位与依赖树解析失败
+        _seen = {}
+        def _cap(cmd, cwd, t):
+            _seen["cmd"] = cmd
+            return json.dumps({"dependencies": []})
+        DS.scan(Path(_td), runner=_cap)
+        check("清单用绝对路径", Path(
+            _seen["cmd"][_seen["cmd"].index("-r") + 1]).is_absolute())
+        check("按锁定版本审计", "--no-deps" in _seen["cmd"])
+        # 同一漏洞多条别名记录去重，CVE 优先展示
+        _dup = DS.scan(Path(_td), runner=lambda c, w, t: json.dumps({"dependencies": [
+            {"name": "demo", "version": "1.0", "vulns": [
+                {"id": "PYSEC-1", "aliases": ["CVE-2024-9999"], "fix_versions": ["1.2"]},
+                {"id": "PYSEC-1", "aliases": ["CVE-2024-9999"], "fix_versions": ["1.2"]}]}]}))
+        check("同漏洞别名去重", len(_dup["issues"]) == 1
+              and _dup["issues"][0].rule_id == "DEP-CVE-2024-9999")
     else:
         check("工具缺失如实标注", "未安装" in _r["note"])
+check("工具解析优先解释器模块方式",
+      DS.find_pip_audit() is None or "-m" in DS.find_pip_audit()
+      or Path(DS.find_pip_audit()[0]).exists())
+check("子进程环境剔除宿主包路径",
+      "PYTHONPATH" not in DS._child_env() and "PYTHONHOME" not in DS._child_env())
 
 print(f"\n全部通过：{PASS} 项 ✓")

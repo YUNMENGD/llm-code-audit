@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -27,6 +28,20 @@ def _path(hist_id: str) -> Path:
     return HIST_DIR / f"{hist_id}.json"
 
 
+_TS_LOCK = threading.Lock()
+_LAST_TS = 0.0
+
+
+def _next_ts() -> float:
+    """严格递增时间戳：Windows 上 time.time() 精度约 15ms，同一时刻连续
+    存档会撞值，导致趋势排序退化为按随机 ID 排（实测偶发）。"""
+    global _LAST_TS
+    with _TS_LOCK:
+        now = time.time()
+        _LAST_TS = max(now, _LAST_TS + 0.001)
+        return _LAST_TS
+
+
 def save(rep: AuditReport, meta: dict | None = None) -> str:
     """存档一次审计结果，返回历史 ID。"""
     HIST_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,7 +49,7 @@ def save(rep: AuditReport, meta: dict | None = None) -> str:
     meta = meta or {}
     doc = {
         "id": hist_id,
-        "ts": time.time(),
+        "ts": _next_ts(),
         "time_str": time.strftime("%Y-%m-%d %H:%M:%S"),
         "target": rep.target,
         "mode": meta.get("mode", ""),
